@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTD/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Required for ScreenCaptureKit + AVAudioEngine consumption of input audio. -->
+    <key>com.apple.security.device.audio-input</key>
+    <true/>
+    <!-- Tauri spawns the Swift audio sidecar; this allows that. -->
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <!-- Network access (Supabase, Deepgram, Anthropic, Composio). -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+</dict>
+</plist>

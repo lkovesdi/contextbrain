@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint (zero warnings)
+        run: npm run lint
+
+      # Build with placeholder env vars so `next build` doesn't crash on missing
+      # secrets. Real secrets are injected in Vercel at deploy time; this step
+      # only verifies the code compiles and routes resolve.
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci_placeholder
+          SUPABASE_SECRET_KEY: sb_secret_ci_placeholder
+          DEEPGRAM_API_KEY: ci_placeholder
+          DEEPGRAM_PROJECT_ID: 00000000-0000-0000-0000-000000000000
+          OPENAI_API_KEY: ci_placeholder
+          ANTHROPIC_API_KEY: ci_placeholder
+          COMPOSIO_API_KEY: ci_placeholder
+          COMPOSIO_GITHUB_AUTH_CONFIG: ci_placeholder
+          COMPOSIO_JIRA_AUTH_CONFIG: ci_placeholder
+          COMPOSIO_FIGMA_AUTH_CONFIG: ci_placeholder

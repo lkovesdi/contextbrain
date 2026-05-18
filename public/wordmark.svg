@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 48" fill="none">
+  <rect width="48" height="48" rx="11" fill="#14151A"></rect>
+  <path d="M14 31 C10 18 24 11 33 16 C39 21 38 28 34 32" stroke="#F2F1ED" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity=".62"></path>
+  <path d="M9 35 C5 11 26 4 39 11" stroke="#F2F1ED" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity=".35"></path>
+  <path d="M27 21 C30 22 30 27 25 27 C20 27 18 21 24 19 C32 16 35 25 30 30" stroke="#F2F1ED" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"></path>
+  <circle cx="25" cy="24" r="1.6" fill="#4B49E6"></circle>
+  <text x="64" y="32" font-family="Instrument Serif, Iowan Old Style, Georgia, serif" font-size="28" letter-spacing="-0.4" fill="#14151A">MeetingBrain</text>
+</svg>

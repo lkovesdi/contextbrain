@@ -1,0 +1,57 @@
+"use client";
+
+import * as React from "react";
+
+type Variant = "primary" | "ink" | "secondary" | "ghost" | "danger";
+type Size = "sm" | "md" | "lg";
+
+type Props = React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: Variant;
+  size?: Size;
+  leftIcon?: React.ReactNode;
+  rightIcon?: React.ReactNode;
+};
+
+const SIZE: Record<Size, string> = {
+  sm: "text-[12px] px-[11px] py-[5px] rounded-[4px] gap-[6px]",
+  md: "text-[13px] px-[14px] py-[8px] rounded-[6px] gap-[7px]",
+  lg: "text-[14px] px-[18px] py-[11px] rounded-[8px] gap-[8px]",
+};
+
+const VARIANT: Record<Variant, string> = {
+  primary:
+    "bg-cortex text-white border border-transparent hover:bg-cortex-hover active:bg-cortex-press",
+  ink:
+    "bg-ink text-paper border border-transparent hover:bg-ink-2",
+  secondary:
+    "bg-bone-2 text-ink border border-mist hover:bg-paper-2",
+  ghost:
+    "bg-transparent text-ink border border-transparent hover:bg-paper-2",
+  danger:
+    "bg-pulse text-white border border-transparent hover:opacity-90",
+};
+
+export const Button = React.forwardRef<HTMLButtonElement, Props>(function Button(
+  { variant = "primary", size = "md", leftIcon, rightIcon, className = "", children, disabled, ...rest },
+  ref
+) {
+  return (
+    <button
+      ref={ref}
+      disabled={disabled}
+      className={[
+        "inline-flex items-center whitespace-nowrap font-medium tracking-[-0.005em]",
+        "transition-[background-color,box-shadow] duration-[120ms] ease-[var(--ease-out)]",
+        "cursor-pointer disabled:opacity-45 disabled:cursor-not-allowed",
+        SIZE[size],
+        VARIANT[variant],
+        className,
+      ].join(" ")}
+      {...rest}
+    >
+      {leftIcon}
+      {children}
+      {rightIcon}
+    </button>
+  );
+});

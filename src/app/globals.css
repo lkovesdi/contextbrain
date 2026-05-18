@@ -1,0 +1,181 @@
+@import "tailwindcss";
+
+/* ============================================================
+   MeetingBrain Design System — Foundations
+   "Futuristic but calm, type-led." Editorial serif display,
+   geometric sans body, mono for technical metadata. Paper/ink
+   palette with a single spectral signal color (Cortex).
+   ============================================================ */
+
+:root {
+  /* ----- COLOR / Surface (Paper) ----- */
+  --paper:          #F2F1ED;
+  --paper-2:        #ECEBE6;
+  --bone:           #F8F7F4;
+  --bone-2:         #FFFFFF;
+  --mist:           #DCDBD5;
+  --mist-2:         #C9C8C2;
+
+  /* ----- COLOR / Ink ----- */
+  --ink:            #14151A;
+  --ink-2:          #2E2F35;
+  --slate:          #5A5B62;
+  --slate-2:        #8B8C92;
+  --slate-3:        #B4B5B8;
+
+  /* ----- COLOR / Cortex — brand signal ----- */
+  --cortex:         #4B49E6;
+  --cortex-hover:   #3835D4;
+  --cortex-press:   #2A28B8;
+  --cortex-tint:    #E7E7FB;
+  --cortex-tint-2:  #C9C8F4;
+  --cortex-ink:     #1B1A85;
+
+  /* ----- COLOR / Pulse — live / recording / error ----- */
+  --pulse:          #B23A30;
+  --pulse-tint:     #F4DDD8;
+  --pulse-ink:      #7A2118;
+
+  /* ----- COLOR / Echo — success / connected ----- */
+  --echo:           #2C7A55;
+  --echo-tint:      #DFEDE5;
+  --echo-ink:       #14442D;
+
+  /* ----- COLOR / Amber — caution / pending ----- */
+  --amber:          #B57521;
+  --amber-tint:     #F4E6CC;
+  --amber-ink:      #6B4310;
+
+  /* ----- TYPOGRAPHY / Families ----- */
+  --font-display:   var(--font-instrument-serif), "Iowan Old Style", Georgia, serif;
+  --font-sans:      var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono:      var(--font-geist-mono), ui-monospace, "SFMono-Regular", "Menlo", monospace;
+
+  /* ----- TYPOGRAPHY / Scale ----- */
+  --fs-display-xl: 64px; --lh-display-xl: 1.02; --tr-display-xl: -0.02em;
+  --fs-display-l:  44px; --lh-display-l:  1.05; --tr-display-l:  -0.018em;
+  --fs-display-m:  32px; --lh-display-m:  1.10; --tr-display-m:  -0.015em;
+  --fs-h1:         28px; --lh-h1:         1.18; --tr-h1:         -0.012em;
+  --fs-h2:         22px; --lh-h2:         1.22; --tr-h2:         -0.010em;
+  --fs-h3:         17px; --lh-h3:         1.30; --tr-h3:         -0.005em;
+  --fs-body:       14px; --lh-body:       1.55;
+  --fs-body-l:     16px; --lh-body-l:     1.55;
+  --fs-small:      13px; --lh-small:      1.45;
+  --fs-xs:         11px; --lh-xs:         1.30; --tr-xs:           0.06em;
+  --fs-mono:       12px; --lh-mono:       1.40;
+
+  /* ----- SPACING (4px base) ----- */
+  --s-0:  0;
+  --s-1:  4px;
+  --s-2:  8px;
+  --s-3:  12px;
+  --s-4:  16px;
+  --s-5:  20px;
+  --s-6:  24px;
+  --s-8:  32px;
+  --s-10: 40px;
+  --s-12: 48px;
+  --s-16: 64px;
+  --s-20: 80px;
+
+  /* ----- RADII ----- */
+  --r-1: 4px;
+  --r-2: 6px;
+  --r-3: 8px;
+  --r-4: 10px;
+  --r-5: 14px;
+  --r-pill: 999px;
+
+  /* ----- ELEVATION ----- */
+  --shadow-0: 0 0 0 1px var(--mist);
+  --shadow-1: 0 1px 0 rgba(20,21,26,0.04), 0 0 0 1px var(--mist);
+  --shadow-2: 0 1px 2px rgba(20,21,26,0.06), 0 2px 6px rgba(20,21,26,0.04),
+              0 0 0 1px var(--mist);
+  --shadow-3: 0 4px 14px rgba(20,21,26,0.10), 0 1px 3px rgba(20,21,26,0.06),
+              0 0 0 1px var(--mist);
+  --shadow-4: 0 24px 48px -12px rgba(20,21,26,0.22), 0 8px 16px -8px rgba(20,21,26,0.10),
+              0 0 0 1px var(--mist);
+  --focus-ring: 0 0 0 3px var(--cortex-tint), 0 0 0 4px var(--cortex);
+
+  /* ----- MOTION ----- */
+  --ease-out:     cubic-bezier(0.22, 0.61, 0.36, 1);
+  --ease-in-out:  cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring:  cubic-bezier(0.34, 1.30, 0.64, 1);
+  --d-1: 120ms;
+  --d-2: 180ms;
+  --d-3: 240ms;
+  --d-4: 360ms;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-paper-2: var(--paper-2);
+  --color-bone: var(--bone);
+  --color-bone-2: var(--bone-2);
+  --color-mist: var(--mist);
+  --color-mist-2: var(--mist-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-slate: var(--slate);
+  --color-slate-2: var(--slate-2);
+  --color-slate-3: var(--slate-3);
+  --color-cortex: var(--cortex);
+  --color-cortex-hover: var(--cortex-hover);
+  --color-cortex-press: var(--cortex-press);
+  --color-cortex-tint: var(--cortex-tint);
+  --color-cortex-tint-2: var(--cortex-tint-2);
+  --color-cortex-ink: var(--cortex-ink);
+  --color-pulse: var(--pulse);
+  --color-pulse-tint: var(--pulse-tint);
+  --color-pulse-ink: var(--pulse-ink);
+  --color-echo: var(--echo);
+  --color-echo-tint: var(--echo-tint);
+  --color-echo-ink: var(--echo-ink);
+  --color-amber: var(--amber);
+  --color-amber-tint: var(--amber-tint);
+  --color-amber-ink: var(--amber-ink);
+
+  --font-display: var(--font-display);
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+html, body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: var(--fs-body);
+  line-height: var(--lh-body);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+::selection { background: var(--cortex-tint); color: var(--cortex-ink); }
+
+:where(button, a, input, textarea, select, [tabindex]):focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+  border-radius: var(--r-2);
+}
+
+@keyframes mb-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.35; transform: scale(0.82); }
+}
+@keyframes mb-blink { 50% { opacity: 0; } }
+
+@keyframes mb-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes mb-modal-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+/* Scrollbars — calm */
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--mist-2); border-radius: 99px; }
+*::-webkit-scrollbar-thumb:hover { background: var(--slate-3); }
+*::-webkit-scrollbar-track { background: transparent; }
