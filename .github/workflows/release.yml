@@ -1,0 +1,63 @@
+name: release
+
+# Builds the Tauri desktop app for macOS (universal), signs + notarizes it,
+# and publishes the .dmg to a GitHub Release.
+#
+# Trigger: push a version tag, e.g.
+#   git tag v0.1.0 && git push origin v0.1.0
+# The release is created as a DRAFT so you can review the assets before
+# publishing. `workflow_dispatch` lets you do a dry-run build from a branch.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - run: npm ci
+
+      - name: Build & release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # --- macOS signing (Developer ID Application cert as base64 .p12) ---
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          # --- macOS notarization (Apple ID + app-specific password route) ---
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "ContextBrain ${{ github.ref_name }}"
+          releaseBody: "Download the .dmg below."
+          releaseDraft: true
+          prerelease: false
+          args: "--target universal-apple-darwin"

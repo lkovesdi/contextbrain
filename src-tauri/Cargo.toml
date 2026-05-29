@@ -1,12 +1,12 @@
 [package]
-name = "meetingbrain"
+name = "contextbrain"
 version = "0.1.0"
-description = "MeetingBrain desktop"
+description = "ContextBrain desktop"
 edition = "2021"
 rust-version = "1.77"
 
 [lib]
-name = "meetingbrain_lib"
+name = "contextbrain_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
@@ -14,7 +14,7 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-# Captures `meetingbrain://...` callback URLs after Supabase / Composio
+# Captures `contextbrain://...` callback URLs after Supabase / Composio
 # magic-link redirects. Wired into the renderer in Phase 2.
 tauri-plugin-deep-link = "2"
 # OTA updater for desktop builds. Manifest lives on a GitHub Release asset;

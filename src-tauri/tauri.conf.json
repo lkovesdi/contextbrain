@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "MeetingBrain",
+  "productName": "ContextBrain",
   "version": "0.1.0",
-  "identifier": "app.meetingbrain.desktop",
+  "identifier": "app.contextbrain.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:3000",
@@ -13,8 +13,8 @@
     "windows": [
       {
         "label": "main",
-        "title": "MeetingBrain",
-        "url": "https://meetingbrain.app",
+        "title": "ContextBrain",
+        "url": "https://contextbrain.app",
         "width": 1280,
         "height": 800,
         "minWidth": 960,
@@ -51,13 +51,13 @@
   "plugins": {
     "deep-link": {
       "desktop": {
-        "schemes": ["meetingbrain"]
+        "schemes": ["contextbrain"]
       }
     },
     "updater": {
       "active": false,
       "endpoints": [
-        "https://github.com/lkovesdi/meetingbrain/releases/latest/download/latest.json"
+        "https://github.com/lkovesdi/contextbrain/releases/latest/download/latest.json"
       ],
       "dialog": true,
       "pubkey": "REPLACE_WITH_GENERATED_PUBLIC_KEY"

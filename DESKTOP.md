@@ -1,6 +1,6 @@
-# MeetingBrain — desktop app
+# ContextBrain — desktop app
 
-The desktop app is a Tauri 2 shell wrapping the same Next.js code that runs in the browser. The WebView loads from `https://meetingbrain.app` (production) or `http://localhost:3000` (`tauri dev`). All secrets stay on Vercel — the desktop binary never sees an API key. Native code only ships for the things browsers literally can't do: system audio capture, deep-link OAuth, native menus, code-signed updates.
+The desktop app is a Tauri 2 shell wrapping the same Next.js code that runs in the browser. The WebView loads from `https://contextbrain.app` (production) or `http://localhost:3000` (`tauri dev`). All secrets stay on Vercel — the desktop binary never sees an API key. Native code only ships for the things browsers literally can't do: system audio capture, deep-link OAuth, native menus, code-signed updates.
 
 This document walks through running the desktop shell locally and shipping a signed build.
 
@@ -60,7 +60,7 @@ Edit `src-tauri/tauri.conf.json`, change `app.windows[0].url`:
 "windows": [
   {
     "label": "main",
-    "url": "https://meetingbrain.app",
+    "url": "https://contextbrain.app",
     …
   }
 ]
@@ -78,11 +78,49 @@ npm run tauri:build
 
 This produces:
 
-- `src-tauri/target/release/bundle/dmg/MeetingBrain_*.dmg` (macOS, unsigned)
-- `src-tauri/target/release/bundle/macos/MeetingBrain.app` (raw `.app`)
-- `src-tauri/target/release/bundle/msi/MeetingBrain_*.msi` (Windows, when built on Windows)
+- `src-tauri/target/release/bundle/dmg/ContextBrain_*.dmg` (macOS, unsigned)
+- `src-tauri/target/release/bundle/macos/ContextBrain.app` (raw `.app`)
+- `src-tauri/target/release/bundle/msi/ContextBrain_*.msi` (Windows, when built on Windows)
 
-The unsigned build is fine for local testing. Signing + notarization (Phase 3 / Phase 5) is wired through CI, not here.
+The unsigned build is fine for local testing. For a **public, signed, downloadable** build, don't sign locally — use the release workflow below.
+
+---
+
+## Releasing a signed download (CI)
+
+`.github/workflows/release.yml` builds macOS (universal), signs and notarizes it, and publishes the `.dmg` to a **draft** GitHub Release. Trigger it with a version tag:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Then open the repo's Releases tab, review the drafted assets, and publish.
+
+### Required GitHub repo secrets (macOS signing + notarization)
+
+Add these under **Settings → Secrets and variables → Actions**:
+
+| Secret | What it is |
+| --- | --- |
+| `APPLE_CERTIFICATE` | base64 of your exported "Developer ID Application" cert (`.p12`) |
+| `APPLE_CERTIFICATE_PASSWORD` | the password you set when exporting the `.p12` |
+| `APPLE_SIGNING_IDENTITY` | e.g. `Developer ID Application: Your Name (TEAMID)` |
+| `APPLE_ID` | your Apple Developer account email |
+| `APPLE_PASSWORD` | an **app-specific password** (appleid.apple.com → Sign-In and Security) |
+| `APPLE_TEAM_ID` | your 10-char Team ID |
+
+Export the cert to base64 locally:
+
+```bash
+# From Keychain Access, export your "Developer ID Application" cert as cert.p12, then:
+base64 -i cert.p12 | pbcopy   # paste into the APPLE_CERTIFICATE secret
+security find-identity -p codesigning -v   # shows the exact APPLE_SIGNING_IDENTITY string
+```
+
+### Windows
+
+macOS only for now. Windows builds (signing cert, MSI) are deferred — see Phase 5 below.
 
 ---
 
@@ -114,5 +152,5 @@ Until those phases land, the desktop app is functionally equivalent to opening t
 
 ## Notes
 
-- The Rust target directory (`src-tauri/target/`) is ~2–3 GB after a first build. It's gitignored. Periodically `cargo clean -p meetingbrain` from `src-tauri/` if you're tight on disk.
+- The Rust target directory (`src-tauri/target/`) is ~2–3 GB after a first build. It's gitignored. Periodically `cargo clean -p contextbrain` from `src-tauri/` if you're tight on disk.
 - The updater is **disabled by default** in `tauri.conf.json` (`active: false`). Don't flip it on until Phase 6 generates the signing key — releases without a verified signature will reject updates and risk shipping a build that can never be updated again.

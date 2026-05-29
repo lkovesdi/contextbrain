@@ -43,4 +43,11 @@ next-env.d.ts
 # design handoff bundle (reference material — not source)
 /.design-handoff/
 *-handoff.zip
-/MeetingBrain*.zip
+/ContextBrain*.zip
+
+# playwright e2e
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/e2e/shots/
