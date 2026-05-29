@@ -20,7 +20,7 @@ const instrumentSerif = Instrument_Serif({
 });
 
 export const metadata: Metadata = {
-  title: "MeetingBrain",
+  title: "ContextBrain",
   description: "Capture, structure, and chat with your meetings.",
 };
 

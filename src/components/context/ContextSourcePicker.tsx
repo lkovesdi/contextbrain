@@ -38,6 +38,12 @@ export function ContextSourcePicker({ providers, onAdded, disabledReason }: Prop
   const [path, setPath] = useState("");
   const [children, setChildren] = useState<ChildItem[]>([]);
   const [childrenLoading, setChildrenLoading] = useState(false);
+  // Active intermediate mode. "__default" = the existing tree view; anything
+  // else swaps in a flat list driven by `provider.intermediateModes.listForMode`.
+  const [activeModeKey, setActiveModeKey] = useState<string>("__default");
+  const [modeItems, setModeItems] = useState<ChildItem[]>([]);
+  const [modeLoading, setModeLoading] = useState(false);
+  const [modeError, setModeError] = useState<string | null>(null);
   const [adding, setAdding] = useState<string | null>(null);
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const dropdownRef = useRef<HTMLDivElement | null>(null);
@@ -54,8 +60,20 @@ export function ContextSourcePicker({ providers, onAdded, disabledReason }: Prop
       setPath("");
       setContainers([]);
       setChildren([]);
+      setActiveModeKey("__default");
+      setModeItems([]);
     });
   }, [activeProviderId]);
+
+  // Reset mode + clear results when the user leaves the container.
+  useEffect(() => {
+    if (activeContainer) return;
+    queueMicrotask(() => {
+      setActiveModeKey("__default");
+      setModeItems([]);
+      setModeError(null);
+    });
+  }, [activeContainer]);
 
   // Close dropdown on outside click.
   useEffect(() => {
@@ -113,9 +131,10 @@ export function ContextSourcePicker({ providers, onAdded, disabledReason }: Prop
     };
   }, [query, open, activeContainer, provider]);
 
-  // Children load when entering / navigating inside a container.
+  // Children load when entering / navigating inside a container. Only active
+  // in the default mode — non-default modes use their own list endpoint below.
   useEffect(() => {
-    if (!activeContainer) return;
+    if (!activeContainer || activeModeKey !== "__default") return;
     let cancelled = false;
     (async () => {
       if (cancelled) return;
@@ -138,7 +157,36 @@ export function ContextSourcePicker({ providers, onAdded, disabledReason }: Prop
     return () => {
       cancelled = true;
     };
-  }, [activeContainer, path, provider]);
+  }, [activeContainer, path, provider, activeModeKey]);
+
+  // Mode list load when the user picks a non-default mode (e.g. Branches, PRs).
+  // Debounced like container search so typing in the input refines results.
+  useEffect(() => {
+    if (!activeContainer || activeModeKey === "__default") return;
+    if (!provider.intermediateModes) return;
+    const listFor = provider.intermediateModes.listForMode;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      if (cancelled) return;
+      setModeLoading(true);
+      setModeError(null);
+      try {
+        const items = await listFor(activeContainer, activeModeKey, query);
+        if (cancelled) return;
+        setModeItems(items);
+      } catch (e) {
+        if (cancelled) return;
+        setModeError(e instanceof Error ? e.message : "Lookup failed");
+        setModeItems([]);
+      } finally {
+        if (!cancelled) setModeLoading(false);
+      }
+    }, 220);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [activeContainer, activeModeKey, query, provider]);
 
   async function postChip(payload: unknown, key: string) {
     setAdding(key);
@@ -154,6 +202,11 @@ export function ContextSourcePicker({ providers, onAdded, disabledReason }: Prop
         return;
       }
       onAdded(json.context as ChipData);
+      setOpen(false);
+      setQuery("");
+      setActiveContainer(null);
+      setPath("");
+      inputRef.current?.blur();
     } finally {
       setAdding(null);
     }
@@ -244,6 +297,7 @@ export function ContextSourcePicker({ providers, onAdded, disabledReason }: Prop
       {open && !disabled && typeof document !== "undefined" && createPortal(
         <div
           ref={dropdownRef}
+          data-floating-layer
           className="max-h-[360px] overflow-y-auto rounded-[10px] bg-bone-2 border border-mist"
           style={{
             position: "fixed",
@@ -265,10 +319,38 @@ export function ContextSourcePicker({ providers, onAdded, disabledReason }: Prop
                 setActiveContainer(c);
                 setPath("");
                 setQuery("");
+                setActiveModeKey("__default");
                 setTimeout(() => inputRef.current?.focus(), 0);
               }}
               onAddWhole={(c) =>
                 postChip(provider.containerToPayload(c), `whole:${c.id}`)
+              }
+            />
+          ) : activeModeKey !== "__default" && provider.intermediateModes ? (
+            <ModeView
+              container={activeContainer}
+              modes={provider.intermediateModes.modes}
+              activeModeKey={activeModeKey}
+              onModeChange={(k) => {
+                setActiveModeKey(k);
+                setQuery("");
+                setModeItems([]);
+                setTimeout(() => inputRef.current?.focus(), 0);
+              }}
+              items={modeItems}
+              loading={modeLoading}
+              error={modeError}
+              emptyHint={provider.intermediateModes.emptyHintForMode?.(activeModeKey)}
+              adding={adding}
+              onAdd={(child) =>
+                postChip(
+                  provider.intermediateModes!.modeChildToPayload(
+                    activeContainer,
+                    activeModeKey,
+                    child
+                  ),
+                  `mode:${activeModeKey}:${child.id}`
+                )
               }
             />
           ) : (
@@ -280,6 +362,13 @@ export function ContextSourcePicker({ providers, onAdded, disabledReason }: Prop
               loading={childrenLoading}
               query={query}
               path={path}
+              modes={provider.intermediateModes?.modes}
+              activeModeKey={activeModeKey}
+              onModeChange={(k) => {
+                setActiveModeKey(k);
+                setQuery("");
+                setTimeout(() => inputRef.current?.focus(), 0);
+              }}
               onNavigate={(p) => setPath(p)}
               adding={adding}
               onAddCurrent={() =>
@@ -394,6 +483,9 @@ function ChildrenView({
   loading,
   query,
   path,
+  modes,
+  activeModeKey,
+  onModeChange,
   onNavigate,
   adding,
   onAddCurrent,
@@ -406,6 +498,9 @@ function ChildrenView({
   loading: boolean;
   query: string;
   path: string;
+  modes?: Array<{ key: string; label: string }>;
+  activeModeKey: string;
+  onModeChange: (key: string) => void;
   onNavigate: (path: string) => void;
   adding: string | null;
   onAddCurrent: () => void;
@@ -419,6 +514,13 @@ function ChildrenView({
 
   return (
     <div>
+      {modes && modes.length > 1 && (
+        <ModeTabs
+          modes={modes}
+          activeModeKey={activeModeKey}
+          onChange={onModeChange}
+        />
+      )}
       <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-mist sticky top-0 bg-bone-2 z-10">
         <div className="flex items-center gap-1 font-mono text-[10.5px] uppercase tracking-[0.06em] text-slate min-w-0 overflow-hidden">
           <button
@@ -514,6 +616,126 @@ function ChildrenView({
                 >
                   <Plus size={10} strokeWidth={1.6} />
                   {child.isNavigable ? "Open" : "Add"}
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+// ----- Mode tabs ----------------------------------------------------------
+
+function ModeTabs({
+  modes,
+  activeModeKey,
+  onChange,
+}: {
+  modes: Array<{ key: string; label: string }>;
+  activeModeKey: string;
+  onChange: (key: string) => void;
+}) {
+  return (
+    <div className="flex items-center gap-1 px-2 pt-2 pb-1 sticky top-0 bg-bone-2 z-20">
+      {modes.map((m) => {
+        const active = m.key === activeModeKey;
+        return (
+          <button
+            key={m.key}
+            onClick={() => onChange(m.key)}
+            className={[
+              "px-[10px] py-[3px] text-[11px] font-medium rounded-full border transition-colors duration-[120ms]",
+              active
+                ? "bg-cortex-tint border-cortex-tint-2 text-cortex-ink"
+                : "bg-bone-2 border-mist text-slate hover:bg-paper-2 hover:text-ink",
+            ].join(" ")}
+          >
+            {m.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ----- Mode view (flat list, e.g. branches / PRs) ------------------------
+
+function ModeView({
+  container,
+  modes,
+  activeModeKey,
+  onModeChange,
+  items,
+  loading,
+  error,
+  emptyHint,
+  adding,
+  onAdd,
+}: {
+  container: ContainerItem;
+  modes: Array<{ key: string; label: string }>;
+  activeModeKey: string;
+  onModeChange: (key: string) => void;
+  items: ChildItem[];
+  loading: boolean;
+  error: string | null;
+  emptyHint?: string;
+  adding: string | null;
+  onAdd: (child: ChildItem) => void;
+}) {
+  return (
+    <div>
+      <ModeTabs modes={modes} activeModeKey={activeModeKey} onChange={onModeChange} />
+      <div className="px-3 py-2 border-b border-mist sticky top-[36px] bg-bone-2 z-10">
+        <div className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-slate truncate">
+          {container.display}
+        </div>
+      </div>
+      {error ? (
+        <div className="px-4 py-3 text-[12.5px] text-pulse-ink font-mono">{error}</div>
+      ) : loading && items.length === 0 ? (
+        <div className="px-4 py-3 text-[12.5px] text-slate font-mono">Loading…</div>
+      ) : items.length === 0 ? (
+        <div className="px-4 py-3 text-[12.5px] text-slate font-mono">
+          {emptyHint ?? "Nothing here."}
+        </div>
+      ) : (
+        <ul className="list-none m-0 p-0">
+          {items.map((item) => {
+            const Icon =
+              item.iconKind === "folder"
+                ? Folder
+                : item.iconKind === "ticket"
+                ? Ticket
+                : FileText;
+            return (
+              <li
+                key={item.id}
+                className="flex items-center gap-2 px-3 py-[7px] border-b border-mist last:border-b-0 group"
+              >
+                <Icon size={13} strokeWidth={1.6} className="text-slate flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="text-[12.5px] text-ink truncate">{item.display}</div>
+                  {item.secondary && (
+                    <div className="text-[11px] text-slate-2 truncate mt-[1px]">
+                      {item.secondary}
+                    </div>
+                  )}
+                </div>
+                {item.meta && (
+                  <span className="font-mono text-[10px] text-slate-2 whitespace-nowrap">
+                    {item.meta}
+                  </span>
+                )}
+                <button
+                  onClick={() => onAdd(item)}
+                  disabled={adding !== null}
+                  className="flex items-center gap-1 px-2 py-[3px] rounded-[4px] text-[10.5px] font-medium border text-white bg-cortex border-cortex hover:bg-cortex-hover opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                >
+                  <Plus size={10} strokeWidth={1.6} />
+                  Add
                 </button>
               </li>
             );

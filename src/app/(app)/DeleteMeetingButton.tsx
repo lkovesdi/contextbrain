@@ -9,9 +9,14 @@ import { useConfirm } from "@/components/ui/ConfirmModal";
 export function DeleteMeetingButton({
   meetingId,
   title,
+  onDeleted,
 }: {
   meetingId: string;
   title: string;
+  // When provided (client-managed lists), called after a successful delete so
+  // the caller can drop the row from its own state — router.refresh() only
+  // re-renders the server-rendered first page.
+  onDeleted?: () => void;
 }) {
   const router = useRouter();
   const confirm = useConfirm();
@@ -40,6 +45,7 @@ export function DeleteMeetingButton({
         alert(j.error ?? `Delete failed (${res.status})`);
         return;
       }
+      onDeleted?.();
       router.refresh();
     } finally {
       setBusy(false);

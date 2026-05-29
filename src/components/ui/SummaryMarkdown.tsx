@@ -8,12 +8,15 @@
 import { Fragment } from "react";
 import { ImageOff, Loader2, RotateCw } from "lucide-react";
 import { useImageLoadState } from "@/lib/useImageLoadState";
+import { MermaidDiagram } from "./MermaidDiagram";
 
 type Block =
   | { kind: "h3"; text: string }
   | { kind: "p"; text: string }
   | { kind: "ul"; items: { text: string; children: string[] }[] }
-  | { kind: "img"; alt: string; url: string };
+  | { kind: "img"; alt: string; url: string }
+  | { kind: "mermaid"; code: string }
+  | { kind: "code"; lang: string | null; code: string };
 
 function tokenize(md: string): Block[] {
   const lines = md.replace(/\r\n/g, "\n").split("\n");
@@ -31,6 +34,25 @@ function tokenize(md: string): Block[] {
     if (line.startsWith("### ")) {
       out.push({ kind: "h3", text: line.slice(4).trim() });
       i++;
+      continue;
+    }
+
+    // Fenced code block — `mermaid` renders as a diagram, anything else
+    // renders as a plain code block. Consume until the closing fence.
+    const fenceOpen = line.match(/^```(\w+)?\s*$/);
+    if (fenceOpen) {
+      const lang = (fenceOpen[1] ?? "").toLowerCase() || null;
+      i++;
+      const buf: string[] = [];
+      while (i < lines.length && !/^```\s*$/.test(lines[i])) {
+        buf.push(lines[i]);
+        i++;
+      }
+      // Skip the closing fence if present.
+      if (i < lines.length) i++;
+      const code = buf.join("\n");
+      if (lang === "mermaid") out.push({ kind: "mermaid", code });
+      else out.push({ kind: "code", lang, code });
       continue;
     }
 
@@ -65,13 +87,15 @@ function tokenize(md: string): Block[] {
       continue;
     }
 
-    // Regular paragraph: greedily consume non-empty, non-header, non-bullet lines.
+    // Regular paragraph: greedily consume non-empty, non-header, non-bullet,
+    // non-fence lines.
     const paraLines: string[] = [];
     while (
       i < lines.length &&
       lines[i].trim() &&
       !lines[i].startsWith("### ") &&
-      !/^[-*]\s+/.test(lines[i])
+      !/^[-*]\s+/.test(lines[i]) &&
+      !/^```/.test(lines[i])
     ) {
       paraLines.push(lines[i]);
       i++;
@@ -111,7 +135,7 @@ function SummaryImage({ url, alt }: { url: string; alt: string }) {
         <span className="flex items-center gap-2 px-3 py-[14px] rounded-[6px] border border-mist bg-paper-2 text-[12px] text-amber-ink min-h-[80px]">
           <ImageOff size={14} strokeWidth={1.6} className="text-amber" />
           <span className="flex-1 font-mono uppercase tracking-[0.06em] text-[10.5px]">
-            Couldn&apos;t render — retrying in 90s
+            Couldn&apos;t render — retrying…
           </span>
           <button
             onClick={(e) => {
@@ -237,6 +261,24 @@ export function SummaryMarkdown({ source }: { source: string }) {
             <Fragment key={i}>
               {renderImage(b.url, b.alt, `img${i}`)}
             </Fragment>
+          );
+        }
+        if (b.kind === "mermaid") {
+          return <MermaidDiagram key={i} code={b.code} />;
+        }
+        if (b.kind === "code") {
+          return (
+            <pre
+              key={i}
+              className="m-0 rounded-[6px] border border-mist bg-paper-2 p-3 overflow-x-auto font-mono text-[12px] text-ink leading-[1.5]"
+            >
+              {b.lang && (
+                <div className="font-mono text-[10px] uppercase tracking-[0.07em] text-slate-2 mb-2">
+                  {b.lang}
+                </div>
+              )}
+              {b.code}
+            </pre>
           );
         }
         return (

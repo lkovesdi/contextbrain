@@ -3,7 +3,14 @@
 // Adding a new integration means writing one of these and registering it in
 // `collectorFor` below.
 
-import { collectFiles, getFileContent, type WalkedFile } from "@/lib/github";
+import {
+  collectFiles,
+  getFileContent,
+  getPullRequest,
+  listPullRequestComments,
+  listPullRequestFiles,
+  type WalkedFile,
+} from "@/lib/github";
 import { listIssues as listJiraIssues, type JiraIssue } from "@/lib/jira";
 import { listIssues as listLinearIssues, type LinearIssue } from "@/lib/linear";
 import { getFileContentForIndexing } from "@/lib/figma";
@@ -35,7 +42,95 @@ async function collectGithub(
     await opts.onProgress?.(1);
     return content ? [{ path, content }] : [];
   }
+  if (kind === "pr") {
+    const prNumber = Number(md.pr_number ?? 0);
+    if (!prNumber) return [];
+    return collectGithubPullRequest(userId, owner, repo, prNumber, opts);
+  }
+  // 'repo', 'path', 'branch' all walk the file tree at the stored ref —
+  // branch chips store the branch name in `ref`, so no special-casing needed.
   return collectFiles(userId, owner, repo, path, ref, opts);
+}
+
+async function collectGithubPullRequest(
+  userId: string,
+  owner: string,
+  repo: string,
+  prNumber: number,
+  opts: CollectOptions
+): Promise<WalkedFile[]> {
+  // Plan one unit each for: PR detail, comments-as-a-batch, and the per-file
+  // diff list. Keeps the progress ring's denominator predictable without
+  // over-promising granularity.
+  await opts.onPlanned?.(3);
+  const out: WalkedFile[] = [];
+
+  const pr = await getPullRequest(userId, owner, repo, prNumber);
+  if (pr) {
+    const header = [
+      `# PR #${pr.number} — ${pr.title}`,
+      `Status: ${pr.merged ? "merged" : pr.state}${pr.draft ? " (draft)" : ""}`,
+      pr.author ? `Author: ${pr.author}` : "",
+      pr.head_ref && pr.base_ref ? `Branch: ${pr.head_ref} → ${pr.base_ref}` : "",
+      pr.url ? `URL: ${pr.url}` : "",
+      "",
+      pr.body?.trim() || "_No description._",
+    ]
+      .filter(Boolean)
+      .join("\n");
+    out.push({
+      path: `pr/${prNumber}/description.md`,
+      content: header,
+      metadata: { unit_kind: "pr_description", pr_number: prNumber },
+    });
+  }
+  await opts.onProgress?.(1);
+
+  const comments = await listPullRequestComments(userId, owner, repo, prNumber);
+  if (comments.length > 0) {
+    const merged = comments
+      .map((c) => {
+        const head = [c.author ? `**${c.author}**` : "**anon**", c.path ? `on \`${c.path}\`` : null, c.created_at ?? null]
+          .filter(Boolean)
+          .join(" · ");
+        return `### ${head}\n\n${c.body.trim()}`;
+      })
+      .join("\n\n---\n\n");
+    out.push({
+      path: `pr/${prNumber}/comments.md`,
+      content: `# PR #${prNumber} — comments\n\n${merged}`,
+      metadata: { unit_kind: "pr_comments", pr_number: prNumber, comment_count: comments.length },
+    });
+  }
+  await opts.onProgress?.(2);
+
+  const files = await listPullRequestFiles(userId, owner, repo, prNumber);
+  for (const f of files) {
+    // Skip files with no patch (binary, too-large, or renamed-only). The
+    // filename alone isn't useful for retrieval.
+    if (!f.patch) continue;
+    const body = [
+      `# ${f.filename}`,
+      `Status: ${f.status} (+${f.additions}/-${f.deletions})`,
+      "",
+      "```diff",
+      f.patch,
+      "```",
+    ].join("\n");
+    out.push({
+      path: `pr/${prNumber}/diff/${f.filename}`,
+      content: body,
+      metadata: {
+        unit_kind: "pr_file_diff",
+        pr_number: prNumber,
+        filename: f.filename,
+        status: f.status,
+      },
+    });
+  }
+  await opts.onProgress?.(3);
+
+  return out;
 }
 
 // ---------------- Jira ----------------
@@ -183,6 +278,12 @@ export function collectorFor(sourceType: string): ChipCollector | null {
 
 // Used by the indexer for chunk metadata so retrieval can label sources nicely.
 export function repoLabelFor(sourceType: string, md: ChipMetadata): string {
+  if (sourceType === "github_pr" && md.pr_number) {
+    return `${md.owner}/${md.repo}#${md.pr_number}`;
+  }
+  if (sourceType === "github_branch" && md.branch) {
+    return `${md.owner}/${md.repo}@${md.branch}`;
+  }
   if (sourceType.startsWith("github_")) return `${md.owner}/${md.repo}`;
   if (sourceType.startsWith("jira_")) return `jira:${md.project_key}`;
   if (sourceType.startsWith("linear_")) return `linear:${md.project_name}`;

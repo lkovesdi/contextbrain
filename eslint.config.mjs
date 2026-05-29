@@ -13,6 +13,10 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     ".design-handoff/**",
+    // Tauri's Rust workspace + build artifacts. Nothing JS-y in here should
+    // be linted; the generated debug/release `__global-api-script.js` files
+    // trip the no-unused-expressions rule otherwise.
+    "src-tauri/**",
   ]),
   {
     rules: {

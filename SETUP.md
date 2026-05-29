@@ -1,4 +1,4 @@
-# MeetingBrain — manual setup checklist
+# ContextBrain — manual setup checklist
 
 The agent has implemented the codebase. Before `npm run dev` will actually serve pages, you must complete these external steps. Order matters where noted.
 
@@ -59,7 +59,7 @@ API key from console.anthropic.com → `ANTHROPIC_API_KEY`.
 
 The browser can only record what the OS hands it on a microphone input. Out of the box, that means your physical mic — fine for in-person meetings, useless for Zoom/Meet calls where you also want the other participants' voices. The workaround is a free virtual audio cable + a macOS aggregate device. ~3 minutes one-time setup; never needed again.
 
-This is what Granola / Otter / Fellow do under the hood as native apps. We get to it from a web app by routing system audio through a virtual input device that the browser sees as a regular mic. (When MeetingBrain ships as a Tauri desktop app — PRD §13 — this won't be needed; we'll use `ScreenCaptureKit` directly. Tracked in [BACKLOG.md](BACKLOG.md).)
+This is what Granola / Otter / Fellow do under the hood as native apps. We get to it from a web app by routing system audio through a virtual input device that the browser sees as a regular mic. (When ContextBrain ships as a Tauri desktop app — PRD §13 — this won't be needed; we'll use `ScreenCaptureKit` directly. Tracked in [BACKLOG.md](BACKLOG.md).)
 
 ### Step 1 — Install BlackHole
 
@@ -78,26 +78,26 @@ Open `/Applications/Utilities/Audio MIDI Setup.app` (Spotlight: "audio midi").
 1. Bottom-left **+** → **Create Multi-Output Device**.
 2. Check **your normal output** (built-in speakers, headphones, or whatever you actually listen on) **and BlackHole 2ch**.
 3. Optional: set **Drift Correction** on BlackHole 2ch (right column) to keep streams aligned.
-4. Rename it to something memorable, e.g. "MeetingBrain Output".
+4. Rename it to something memorable, e.g. "ContextBrain Output".
 
 **Aggregate Device** — your mic + BlackHole, presented to the browser as one input.
 
 1. Bottom-left **+** → **Create Aggregate Device**.
 2. Check your **real mic** (e.g. MacBook Pro Microphone) **and BlackHole 2ch**.
 3. Set the real mic as **Clock Source** (right column).
-4. Rename to "MeetingBrain Input".
+4. Rename to "ContextBrain Input".
 
 ### Step 3 — Route system output through it
 
-Sound icon in the menu bar (or **System Settings → Sound → Output**) → pick **MeetingBrain Output**.
+Sound icon in the menu bar (or **System Settings → Sound → Output**) → pick **ContextBrain Output**.
 
 Play any audio; you should still hear it through your real speakers/headphones. A copy is now silently being fed into BlackHole.
 
-### Step 4 — Point MeetingBrain at the aggregate input
+### Step 4 — Point ContextBrain at the aggregate input
 
 In a meeting workspace, under the recorder waveform:
 
-- **Input** dropdown → **MeetingBrain Input** (the aggregate). Saved to `localStorage` so you only pick it once.
+- **Input** dropdown → **ContextBrain Input** (the aggregate). Saved to `localStorage` so you only pick it once.
 - Uncheck **echo cancel** and **noise suppress**. Both are tuned for human voice on a call — they'll dampen music, TTS, and the other-side audio that's coming in over BlackHole.
 
 Hit Start. Play YouTube or join a Zoom — the `peak` indicator should jump to 0.05–0.5 and transcripts should stream as both you and the other speakers talk. Deepgram's diarization will label them Speaker 0 / Speaker 1.

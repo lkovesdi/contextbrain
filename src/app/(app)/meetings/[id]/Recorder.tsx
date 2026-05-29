@@ -7,8 +7,14 @@ import {
   LiveTranscriptionEvents,
   type LiveClient,
 } from "@deepgram/sdk";
-import { Mic } from "lucide-react";
+import { Play, SlidersHorizontal, Square } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Select } from "@/components/ui/Select";
+import { Popover } from "@/components/ui/Popover";
+import { Checkbox } from "@/components/ui/Checkbox";
+import { Input } from "@/components/ui/Input";
+
+type SpeakerNames = Record<string, string>;
 
 type StoredLine = {
   id: string;
@@ -59,43 +65,160 @@ function speakerIndex(speaker: string | null): number {
   return m ? parseInt(m[0], 10) % 3 : 0;
 }
 
-function Waveform({ active }: { active: boolean }) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const N = 96;
+// Tiny in-button level meter driven by the live mic signal. `levelRef` carries
+// the most recent chunk peak (0..1); each frame we smooth it (fast attack /
+// slow release, like a VU meter) and drive a small equalizer: center bars run
+// taller and a per-bar time wobble keeps it shimmering while someone speaks.
+const MINI_BARS = 5;
+const MINI_MAX_PX = 14;
+const MINI_BASE_PX = 2;
+
+function MiniWaveform({
+  active,
+  levelRef,
+  barClassName = "bg-white",
+}: {
+  active: boolean;
+  levelRef: { current: number };
+  barClassName?: string;
+}) {
+  const ref = useRef<HTMLSpanElement | null>(null);
+  const displayRef = useRef(0);
+
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
     let frame = 0;
     const tick = () => {
-      const t = Date.now() / 240;
+      // Perceptual curve so quiet speech is still visible; sqrt ≈ loudness.
+      const target = active
+        ? Math.min(1, Math.sqrt(Math.max(0, levelRef.current)) * 1.4)
+        : 0;
+      const d = displayRef.current;
+      const k = target > d ? 0.5 : 0.14;
+      displayRef.current = d + (target - d) * k;
+
+      const lvl = displayRef.current;
+      const t = performance.now() / 140;
+      const mid = (MINI_BARS - 1) / 2;
       const bars = node.children;
       for (let i = 0; i < bars.length; i++) {
-        const base =
-          Math.sin(i * 0.31 + t * (active ? 1 : 0)) * 0.45 +
-          Math.sin(i * 0.083 + t * (active ? 0.6 : 0)) * 0.4 +
-          Math.sin(i * 0.21) * 0.15;
-        const jitter = active ? (Math.random() - 0.5) * 0.2 : 0;
-        const h = Math.max(3, Math.abs(base + jitter) * 38 + 5);
+        const center = 1 - Math.abs(i - mid) / mid; // 1 at center, 0 at edges
+        const wobble = 0.6 + 0.4 * Math.sin(t + i * 1.7);
+        const h =
+          MINI_BASE_PX +
+          lvl * (MINI_MAX_PX - MINI_BASE_PX) * (0.45 + 0.55 * center) * wobble;
         (bars[i] as HTMLElement).style.height = `${h}px`;
       }
       frame = requestAnimationFrame(tick);
     };
     tick();
     return () => cancelAnimationFrame(frame);
-  }, [active]);
+  }, [active, levelRef]);
 
   return (
-    <div
+    <span
       ref={ref}
-      className="h-[56px] bg-ink rounded-[8px] px-[14px] py-2 flex items-center gap-[2.5px]"
+      aria-hidden
+      className="inline-flex h-[14px] items-center gap-[2px]"
     >
-      {Array.from({ length: N }).map((_, i) => (
+      {Array.from({ length: MINI_BARS }).map((_, i) => (
         <span
           key={i}
-          className="flex-1 rounded-[1.5px] opacity-[0.78]"
-          style={{ background: "linear-gradient(180deg, var(--paper), #fff)" }}
+          className={`w-[2px] rounded-[1px] ${barClassName}`}
+          style={{ height: `${MINI_BASE_PX}px` }}
         />
       ))}
+    </span>
+  );
+}
+
+// A transcript speaker label that opens a rename popover on click. The raw
+// diarization label ("Speaker 0", "Unknown") is the stable key; `displayName`
+// is the resolved name (or the raw label when no override exists).
+function SpeakerLabel({
+  rawKey,
+  displayName,
+  colorClass,
+  onSave,
+}: {
+  rawKey: string;
+  displayName: string;
+  colorClass: string;
+  onSave: (rawKey: string, value: string) => void;
+}) {
+  const named = displayName !== rawKey;
+  return (
+    <Popover
+      align="start"
+      width={224}
+      trigger={
+        <button
+          type="button"
+          title="Rename speaker"
+          className={[
+            "cursor-pointer break-words text-right font-mono text-[11px] uppercase tracking-[0.06em] decoration-dotted underline-offset-2 hover:underline",
+            colorClass,
+          ].join(" ")}
+        >
+          {displayName}
+        </button>
+      }
+    >
+      {(close) => (
+        <RenameSpeakerForm
+          rawKey={rawKey}
+          initial={named ? displayName : ""}
+          onSave={(value) => {
+            onSave(rawKey, value);
+            close();
+          }}
+        />
+      )}
+    </Popover>
+  );
+}
+
+function RenameSpeakerForm({
+  rawKey,
+  initial,
+  onSave,
+}: {
+  rawKey: string;
+  initial: string;
+  onSave: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(initial);
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="m-0 font-mono text-[10px] uppercase tracking-[0.07em] text-slate-2">
+        Rename {rawKey}
+      </p>
+      <Input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder="e.g. Laszlo"
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            onSave(draft.trim());
+          }
+        }}
+      />
+      <div className="flex items-center gap-2">
+        <Button size="sm" onClick={() => onSave(draft.trim())}>
+          Save
+        </Button>
+        {initial && (
+          <Button size="sm" variant="ghost" onClick={() => onSave("")}>
+            Clear
+          </Button>
+        )}
+      </div>
+      <p className="m-0 text-[11px] leading-[1.4] text-slate-2">
+        Applies to every “{rawKey}” line in this meeting.
+      </p>
     </div>
   );
 }
@@ -103,23 +226,40 @@ function Waveform({ active }: { active: boolean }) {
 export function Recorder({
   meetingId,
   initialLines,
+  initialSpeakerNames = {},
 }: {
   meetingId: string;
   initialLines: StoredLine[];
+  initialSpeakerNames?: SpeakerNames;
 }) {
   const [recording, setRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [stored, setStored] = useState<StoredLine[]>(initialLines);
-  const [status, setStatus] = useState<
-    "idle" | "connecting" | "open" | "closing" | "error"
-  >("idle");
-  const [chunks, setChunks] = useState(0);
-  const [transcripts, setTranscripts] = useState(0);
-  const [peak, setPeak] = useState(0);
+  // Per-meeting overrides mapping a raw diarization label ("Speaker 0",
+  // "Unknown") to a name the user attached. Applied at display time so the
+  // raw labels stay intact and new live lines pick up the name automatically.
+  const [speakerNames, setSpeakerNames] = useState<SpeakerNames>(initialSpeakerNames);
+
+  function displaySpeaker(raw: string | null): string {
+    const key = raw || "Unknown";
+    return speakerNames[key] ?? key;
+  }
+
+  function saveSpeakerName(rawKey: string, value: string) {
+    const next = { ...speakerNames };
+    if (value) next[rawKey] = value;
+    else delete next[rawKey];
+    setSpeakerNames(next);
+    fetch(`/api/meetings/${meetingId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ speaker_names: next }),
+    }).catch(() => {});
+  }
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState<string>("");
-  const [echoCancel, setEchoCancel] = useState(true);
-  const [noiseSuppress, setNoiseSuppress] = useState(true);
+  const [echoCancel, setEchoCancel] = useState(false);
+  const [noiseSuppress, setNoiseSuppress] = useState(false);
   const [summaryState, setSummaryState] = useState<"idle" | "generating" | "error">(
     "idle"
   );
@@ -129,9 +269,8 @@ export function Recorder({
   const audioCtxRef = useRef<AudioContext | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  const chunkLog = useRef(0);
-  const peakSinceUpdateRef = useRef(0);
-  const peakRafRef = useRef<number | null>(null);
+  // Most recent chunk peak amplitude (0..1), read by the Waveform each frame.
+  const levelRef = useRef(0);
   // Track the most recent transcript line for dedup. Deepgram sometimes emits
   // the same finalized segment twice, and any duplicated audio pipeline
   // (Strict Mode, second tab, Fast Refresh during recording) will also push
@@ -240,10 +379,6 @@ export function Recorder({
 
   async function start() {
     setError(null);
-    setChunks(0);
-    setTranscripts(0);
-    chunkLog.current = 0;
-    setStatus("connecting");
     try {
       const res = await fetch("/api/deepgram/token");
       if (!res.ok) throw new Error("Could not get Deepgram token");
@@ -261,7 +396,6 @@ export function Recorder({
       connRef.current = conn;
 
       conn.on(LiveTranscriptionEvents.Open, async () => {
-        setStatus("open");
         let stream: MediaStream;
         try {
           const constraints: MediaTrackConstraints = {
@@ -285,7 +419,6 @@ export function Recorder({
           setError("Microphone permission denied. Allow access and try again.");
           conn.finish();
           setRecording(false);
-          setStatus("error");
           return;
         }
         streamRef.current = stream;
@@ -308,13 +441,13 @@ export function Recorder({
         processor.onaudioprocess = (ev) => {
           if (conn.getReadyState() !== 1) return;
           const channel = ev.inputBuffer.getChannelData(0);
-          // Peak amplitude of this chunk — surfaced live in the status bar.
+          // Peak amplitude of this chunk — drives the live waveform meter.
           let p = 0;
           for (let i = 0; i < channel.length; i++) {
             const a = channel[i] < 0 ? -channel[i] : channel[i];
             if (a > p) p = a;
           }
-          if (p > peakSinceUpdateRef.current) peakSinceUpdateRef.current = p;
+          levelRef.current = p;
 
           const downsampled = downsampleFloat32(
             channel,
@@ -323,19 +456,7 @@ export function Recorder({
           );
           const pcm = floatTo16BitPCM(downsampled);
           conn.send(pcm);
-          setChunks((c) => c + 1);
-          if (chunkLog.current < 3) chunkLog.current += 1;
         };
-
-        // Publish peak to React state ~10×/sec — re-rendering on every chunk
-        // (~12×/sec from 4096-sample buffer at 48k) would be wasteful and
-        // identical visually anyway.
-        const pump = () => {
-          setPeak(peakSinceUpdateRef.current);
-          peakSinceUpdateRef.current = 0;
-          peakRafRef.current = window.setTimeout(pump, 100) as unknown as number;
-        };
-        pump();
 
         source.connect(processor);
         // ScriptProcessor only fires onaudioprocess if it's connected to a
@@ -346,8 +467,6 @@ export function Recorder({
         sink.connect(audioCtx.destination);
       });
 
-      conn.on(LiveTranscriptionEvents.Close, () => setStatus("closing"));
-
       conn.on(LiveTranscriptionEvents.Transcript, (data: {
         channel?: {
           alternatives?: {
@@ -356,7 +475,6 @@ export function Recorder({
           }[];
         };
       }) => {
-        setTranscripts((n) => n + 1);
         const alt = data.channel?.alternatives?.[0];
         const transcript = alt?.transcript;
         if (!transcript) return;
@@ -424,7 +542,6 @@ export function Recorder({
           (detail.code !== undefined ? `code=${detail.code}` : null) ||
           "Transcription error.";
         setError(`Deepgram: ${msg} — stop and start again to reconnect.`);
-        setStatus("error");
       });
 
       setRecording(true);
@@ -435,12 +552,7 @@ export function Recorder({
   }
 
   function teardownAudio() {
-    if (peakRafRef.current !== null) {
-      clearTimeout(peakRafRef.current);
-      peakRafRef.current = null;
-    }
-    peakSinceUpdateRef.current = 0;
-    setPeak(0);
+    levelRef.current = 0;
     processorRef.current?.disconnect();
     sourceRef.current?.disconnect();
     audioCtxRef.current?.close().catch(() => {});
@@ -452,11 +564,9 @@ export function Recorder({
   }
 
   function stop() {
-    setStatus("closing");
     teardownAudio();
     connRef.current?.finish();
     setRecording(false);
-    setStatus("idle");
     fetch(`/api/meetings/${meetingId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -486,85 +596,94 @@ export function Recorder({
 
   return (
     <div className="flex flex-col gap-[14px]">
-      <div className="flex items-center gap-[14px] flex-wrap">
+      <div className="flex flex-wrap items-center gap-3 font-mono text-[11px] text-slate">
         {recording ? (
-          <Button variant="danger" onClick={stop}>
-            <span className="w-[7px] h-[7px] rounded-full bg-white [animation:mb-pulse_1.4s_infinite]" />
-            Stop recording
+          <Button
+            variant="icon"
+            size="md"
+            onClick={stop}
+            aria-label="Stop recording"
+            title="Stop recording"
+          >
+            <Square size={13} strokeWidth={0} fill="currentColor" className="text-pulse" />
           </Button>
         ) : (
           <Button
-            variant="ink"
+            variant="icon"
+            size="md"
             onClick={start}
-            leftIcon={<Mic size={14} strokeWidth={1.6} />}
+            aria-label="Start recording"
+            title="Start recording"
           >
-            Start recording
+            <Play size={15} strokeWidth={0} fill="currentColor" className="text-cortex" />
           </Button>
         )}
-        <div className="font-mono text-[11px] text-slate flex gap-[12px] ml-auto whitespace-nowrap">
-          <span>
-            ws · <b className="text-ink font-medium">{status}</b>
-          </span>
-          <span>
-            chunks · <b className="text-ink font-medium">{chunks}</b>
-          </span>
-          <span>
-            events · <b className="text-ink font-medium">{transcripts}</b>
-          </span>
-          <span>
-            peak ·{" "}
-            <b
-              className={
-                peak > 0.02
-                  ? "text-emerald-600 font-medium"
-                  : peak > 0.001
-                  ? "text-ink font-medium"
-                  : "text-pulse-ink font-medium"
-              }
-            >
-              {peak.toFixed(3)}
-            </b>
-          </span>
-        </div>
-      </div>
 
-      <Waveform active={recording} />
+        {recording && (
+          <MiniWaveform
+            active={recording}
+            levelRef={levelRef}
+            barClassName="bg-cortex"
+          />
+        )}
 
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[11px] text-slate">
         <label className="flex items-center gap-2">
           <span className="uppercase tracking-[0.06em]">Input</span>
-          <select
+          <Select
+            size="sm"
+            aria-label="Input device"
+            className="font-mono text-[11px] max-w-[280px]"
             value={deviceId}
-            onChange={(e) => chooseDevice(e.target.value)}
+            onChange={chooseDevice}
             disabled={recording}
-            className="bg-bone-2 border border-mist rounded-[4px] px-2 py-[3px] text-ink text-[11px] max-w-[280px] disabled:opacity-50"
-          >
-            <option value="">System default</option>
-            {devices.map((d, i) => (
-              <option key={d.deviceId || `dev-${i}`} value={d.deviceId}>
-                {d.label || `Microphone ${i + 1} (grant permission to see name)`}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="flex items-center gap-1.5 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={echoCancel}
-            onChange={(e) => setEchoCancel(e.target.checked)}
-            disabled={recording}
+            options={[
+              { value: "", label: "System default" },
+              ...devices.map((d, i) => ({
+                value: d.deviceId,
+                label:
+                  d.label || `Microphone ${i + 1} (grant permission to see name)`,
+              })),
+            ]}
           />
-          <span>echo cancel</span>
         </label>
-        <label className="flex items-center gap-1.5 cursor-pointer">
-          <input
-            type="checkbox"
-            checked={noiseSuppress}
-            onChange={(e) => setNoiseSuppress(e.target.checked)}
-            disabled={recording}
-          />
-          <span>noise suppress</span>
-        </label>
+        <Popover
+          width={232}
+          trigger={
+            <Button
+              variant="icon"
+              size="sm"
+              aria-label="Audio settings"
+              title="Audio settings"
+            >
+              <SlidersHorizontal size={14} strokeWidth={1.6} />
+            </Button>
+          }
+        >
+          <div className="flex flex-col gap-[12px]">
+            <p className="font-mono text-[10px] uppercase tracking-[0.07em] text-slate-2 m-0">
+              Audio processing
+            </p>
+            <Checkbox
+              checked={echoCancel}
+              onChange={setEchoCancel}
+              disabled={recording}
+            >
+              Echo cancellation
+            </Checkbox>
+            <Checkbox
+              checked={noiseSuppress}
+              onChange={setNoiseSuppress}
+              disabled={recording}
+            >
+              Noise suppression
+            </Checkbox>
+            {recording && (
+              <p className="text-[11px] text-slate-2 leading-[1.4] m-0">
+                Stop recording to change these.
+              </p>
+            )}
+          </div>
+        </Popover>
       </div>
 
       {error && (
@@ -607,13 +726,13 @@ export function Recorder({
                   className="grid items-baseline gap-[14px]"
                   style={{ gridTemplateColumns: "74px 1fr" }}
                 >
-                  <div
-                    className={[
-                      "font-mono text-[11px] uppercase tracking-[0.06em] text-right pt-[3px]",
-                      SPEAKER_COLOR[idx],
-                    ].join(" ")}
-                  >
-                    {l.speaker || "Unknown"}
+                  <div className="flex justify-end pt-[3px]">
+                    <SpeakerLabel
+                      rawKey={l.speaker || "Unknown"}
+                      displayName={displaySpeaker(l.speaker)}
+                      colorClass={SPEAKER_COLOR[idx]}
+                      onSave={saveSpeakerName}
+                    />
                   </div>
                   <div className="text-[14px] leading-[1.55] text-ink">
                     <span className="font-mono text-[10.5px] text-slate-3 mr-2">

@@ -7,6 +7,8 @@ import TrashIcon from "@/components/icons/TrashIcon";
 import type { AnimatedIconHandle } from "@/components/icons/types";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Textarea } from "@/components/ui/Textarea";
+import { Select } from "@/components/ui/Select";
 import { Eyebrow } from "@/components/ui/typography";
 import { Card, ListCard } from "@/components/ui/Card";
 import { useConfirm } from "@/components/ui/ConfirmModal";
@@ -106,32 +108,25 @@ export function SpacesManager({
             />
           </div>
 
-          <label className="flex flex-col gap-[5px]">
-            <span className="text-[12px] font-medium text-ink-2">Description (optional)</span>
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={2}
-              placeholder="What lives in this space?"
-              className="rounded-[6px] bg-bone-2 border border-mist px-3 py-[9px] text-[13px] text-ink outline-none resize-none"
-            />
-          </label>
+          <Textarea
+            label="Description (optional)"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            rows={2}
+            placeholder="What lives in this space?"
+            className="resize-none"
+          />
 
-          <label className="flex flex-col gap-[5px]">
-            <span className="text-[12px] font-medium text-ink-2">Default preset (optional)</span>
-            <select
-              value={presetId}
-              onChange={(e) => setPresetId(e.target.value)}
-              className="rounded-[6px] bg-bone-2 border border-mist px-3 py-[9px] text-[13px] text-ink outline-none appearance-none"
-            >
-              <option value="">— None —</option>
-              {presets.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <Select
+            label="Default preset (optional)"
+            fullWidth
+            value={presetId}
+            onChange={setPresetId}
+            options={[
+              { value: "", label: "— None —" },
+              ...presets.map((p) => ({ value: p.id, label: p.name })),
+            ]}
+          />
 
           <div className="flex items-center gap-2">
             <Button variant="ink" onClick={create} disabled={busy || !name.trim()}>

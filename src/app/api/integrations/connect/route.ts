@@ -8,7 +8,16 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 
 const Body = z.object({
-  provider: z.enum(["github", "jira", "figma", "linear"]),
+  provider: z.enum([
+    "github",
+    "jira",
+    "figma",
+    "linear",
+    "linkedin",
+    "zoom",
+    "slack",
+    "gmail",
+  ]),
 });
 
 export async function POST(req: Request) {

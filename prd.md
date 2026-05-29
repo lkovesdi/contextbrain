@@ -1,4 +1,4 @@
-# MeetingBrain — Product Requirements Document (v1)
+# ContextBrain — Product Requirements Document (v1)
 
 > **For the implementing agent:** This PRD is the spec. Build top-to-bottom in the order listed in **§11 Build Order**. Do not skip ahead. Each step has an explicit acceptance check — verify before moving on. If something is ambiguous, prefer the simpler option and leave a `// TODO` note.
 
@@ -6,7 +6,7 @@
 
 ## 1. Product summary
 
-MeetingBrain is a desktop-bound web app that listens to your meetings, takes structured notes, and lets you chat with the whole context — your transcripts, your notes, your past Claude.ai conversations, and connected tools (GitHub, Jira, Figma) — through a single interface. Before a meeting, you load a "context preset" (e.g. "Sprint planning" or "Design review") that bundles the right notes and integration scopes so the chat is already primed when the meeting starts.
+ContextBrain is a desktop-bound web app that listens to your meetings, takes structured notes, and lets you chat with the whole context — your transcripts, your notes, your past Claude.ai conversations, and connected tools (GitHub, Jira, Figma) — through a single interface. Before a meeting, you load a "context preset" (e.g. "Sprint planning" or "Design review") that bundles the right notes and integration scopes so the chat is already primed when the meeting starts.
 
 **Built as:** Next.js 14+ (App Router) web app, structured so it can later be wrapped in Tauri for system-audio capture. v1 ships as a browser-only app for **in-person meetings** (single mic captures the room).
 
@@ -68,8 +68,8 @@ Create a `.env.example` mirroring this with empty values. Never commit `.env.loc
 
 ### Install
 ```bash
-npx create-next-app@latest meetingbrain --typescript --tailwind --app --eslint
-cd meetingbrain
+npx create-next-app@latest contextbrain --typescript --tailwind --app --eslint
+cd contextbrain
 npm install @supabase/supabase-js @supabase/ssr
 npm install @deepgram/sdk
 npm install openai
@@ -265,7 +265,7 @@ $$;
 ## 5. Folder structure
 
 ```
-meetingbrain/
+contextbrain/
 ├── app/
 │   ├── (auth)/
 │   │   ├── login/page.tsx
@@ -849,7 +849,7 @@ export async function POST(req: Request) {
         .join("\n\n")}\n</retrieved_context>`
     : "";
 
-  const system = `You are MeetingBrain, an assistant for the user's meetings and notes. Use the retrieved context below to answer. Cite sources by bracket number when relevant. If the context doesn't cover the question, say so plainly.${contextBlock}`;
+  const system = `You are ContextBrain, an assistant for the user's meetings and notes. Use the retrieved context below to answer. Cite sources by bracket number when relevant. If the context doesn't cover the question, say so plainly.${contextBlock}`;
 
   const result = streamText({
     model: anthropic("claude-sonnet-4-5"),
@@ -1024,6 +1024,6 @@ Each step has an acceptance check. Stop and verify before moving on.
 - Team Spaces and shared notes
 - Notion, Slack, Linear integrations
 - Mobile companion app (in-person meetings, hands-free)
-- Voice query: "Hey MeetingBrain, what did we decide about X?"
+- Voice query: "Hey ContextBrain, what did we decide about X?"
 
 When adding to the codebase later, keep these in mind so today's choices don't paint into a corner.

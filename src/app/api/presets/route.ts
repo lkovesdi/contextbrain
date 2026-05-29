@@ -20,6 +20,11 @@ const SourcesSchema = z.object({
       github: IntegrationConfig.optional(),
       jira: IntegrationConfig.optional(),
       figma: IntegrationConfig.optional(),
+      linear: IntegrationConfig.optional(),
+      linkedin: IntegrationConfig.optional(),
+      zoom: IntegrationConfig.optional(),
+      slack: IntegrationConfig.optional(),
+      gmail: IntegrationConfig.optional(),
     })
     .optional(),
 });

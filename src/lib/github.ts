@@ -99,6 +99,197 @@ function toRepo(raw: unknown): GhRepo | null {
   };
 }
 
+// ----- Branches ------------------------------------------------------------
+
+export type GhBranch = {
+  name: string;
+  // The commit SHA the branch currently points to — handy for indexing so we
+  // pin to a specific snapshot rather than tracking the moving tip.
+  sha: string;
+  protected: boolean;
+};
+
+export async function listBranches(
+  userId: string,
+  owner: string,
+  repo: string,
+  query: string,
+  perPage = 50
+): Promise<GhBranch[]> {
+  const res = await executeTool("GITHUB_LIST_BRANCHES", {
+    userId,
+    arguments: { owner, repo, per_page: perPage },
+  });
+  const data = unwrap(res);
+  const items = Array.isArray(data) ? data : [];
+  const all = (items as Array<Record<string, unknown>>)
+    .map((b) => {
+      const name = String(b.name ?? "");
+      const sha =
+        ((b.commit as { sha?: string } | undefined)?.sha as string) ?? "";
+      if (!name) return null;
+      return { name, sha, protected: !!b.protected };
+    })
+    .filter((b): b is GhBranch => !!b);
+  if (!query.trim()) return all;
+  const needle = query.toLowerCase();
+  return all.filter((b) => b.name.toLowerCase().includes(needle));
+}
+
+// ----- Pull requests -------------------------------------------------------
+
+export type GhPullRequest = {
+  number: number;
+  title: string;
+  state: "open" | "closed";
+  merged: boolean;
+  draft: boolean;
+  author: string | null;
+  base_ref: string | null;
+  head_ref: string | null;
+  body: string | null;
+  url: string | null;
+  updated_at: string | null;
+};
+
+function toPullRequest(raw: Record<string, unknown>): GhPullRequest | null {
+  const number = typeof raw.number === "number" ? raw.number : Number(raw.number);
+  if (!Number.isFinite(number)) return null;
+  const state = raw.state === "closed" ? "closed" : "open";
+  return {
+    number,
+    title: String(raw.title ?? ""),
+    state,
+    merged: !!raw.merged_at,
+    draft: !!raw.draft,
+    author:
+      ((raw.user as { login?: string } | undefined)?.login as string) ?? null,
+    base_ref: ((raw.base as { ref?: string } | undefined)?.ref as string) ?? null,
+    head_ref: ((raw.head as { ref?: string } | undefined)?.ref as string) ?? null,
+    body: typeof raw.body === "string" ? (raw.body as string) : null,
+    url: typeof raw.html_url === "string" ? (raw.html_url as string) : null,
+    updated_at:
+      typeof raw.updated_at === "string" ? (raw.updated_at as string) : null,
+  };
+}
+
+export async function listPullRequests(
+  userId: string,
+  owner: string,
+  repo: string,
+  query: string,
+  state: "open" | "closed" | "all" = "open",
+  perPage = 30
+): Promise<GhPullRequest[]> {
+  const res = await executeTool("GITHUB_LIST_PULL_REQUESTS", {
+    userId,
+    arguments: {
+      owner,
+      repo,
+      state,
+      sort: "updated",
+      direction: "desc",
+      per_page: perPage,
+    },
+  });
+  const data = unwrap(res);
+  const items = Array.isArray(data) ? data : [];
+  const all = (items as Array<Record<string, unknown>>)
+    .map(toPullRequest)
+    .filter((p): p is GhPullRequest => !!p);
+  if (!query.trim()) return all;
+  const needle = query.toLowerCase();
+  return all.filter(
+    (p) =>
+      p.title.toLowerCase().includes(needle) ||
+      String(p.number).includes(needle) ||
+      (p.author ?? "").toLowerCase().includes(needle)
+  );
+}
+
+export async function getPullRequest(
+  userId: string,
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<GhPullRequest | null> {
+  const res = await executeTool("GITHUB_GET_A_PULL_REQUEST", {
+    userId,
+    arguments: { owner, repo, pull_number: prNumber },
+  });
+  const data = unwrap(res) as Record<string, unknown> | null;
+  if (!data) return null;
+  return toPullRequest(data);
+}
+
+export type GhPullComment = {
+  author: string | null;
+  body: string;
+  path: string | null; // null for issue-level comments, set for review comments
+  created_at: string | null;
+};
+
+// Pulls both issue-style comments (the main conversation thread) AND review
+// comments (inline file comments). GitHub exposes them via two different
+// endpoints — we merge here so the indexer sees a single flat list.
+export async function listPullRequestComments(
+  userId: string,
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<GhPullComment[]> {
+  async function fetch(slug: string, isReview: boolean): Promise<GhPullComment[]> {
+    const res = await executeTool(slug, {
+      userId,
+      arguments: { owner, repo, issue_number: prNumber, pull_number: prNumber, per_page: 100 },
+    });
+    const data = unwrap(res);
+    const items = Array.isArray(data) ? data : [];
+    return (items as Array<Record<string, unknown>>).map((c) => ({
+      author:
+        ((c.user as { login?: string } | undefined)?.login as string) ?? null,
+      body: String(c.body ?? ""),
+      path: isReview ? ((c.path as string) ?? null) : null,
+      created_at:
+        typeof c.created_at === "string" ? (c.created_at as string) : null,
+    }));
+  }
+  const [issueComments, reviewComments] = await Promise.all([
+    fetch("GITHUB_LIST_ISSUE_COMMENTS", false).catch(() => []),
+    fetch("GITHUB_LIST_REVIEW_COMMENTS", true).catch(() => []),
+  ]);
+  return [...issueComments, ...reviewComments].filter((c) => c.body.trim());
+}
+
+export type GhPullFile = {
+  filename: string;
+  status: string;       // 'added' | 'modified' | 'removed' | 'renamed'
+  additions: number;
+  deletions: number;
+  patch: string | null; // unified diff; large/binary files have no patch
+};
+
+export async function listPullRequestFiles(
+  userId: string,
+  owner: string,
+  repo: string,
+  prNumber: number
+): Promise<GhPullFile[]> {
+  const res = await executeTool("GITHUB_LIST_PULL_REQUESTS_FILES", {
+    userId,
+    arguments: { owner, repo, pull_number: prNumber, per_page: 100 },
+  });
+  const data = unwrap(res);
+  const items = Array.isArray(data) ? data : [];
+  return (items as Array<Record<string, unknown>>).map((f) => ({
+    filename: String(f.filename ?? ""),
+    status: String(f.status ?? "modified"),
+    additions: typeof f.additions === "number" ? f.additions : 0,
+    deletions: typeof f.deletions === "number" ? f.deletions : 0,
+    patch: typeof f.patch === "string" ? (f.patch as string) : null,
+  }));
+}
+
 // ----- Repository tree -----------------------------------------------------
 
 export async function listContents(

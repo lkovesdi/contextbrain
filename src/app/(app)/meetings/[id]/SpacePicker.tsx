@@ -132,14 +132,14 @@ export function SpacePicker({
   const triggerClasses = compact
     ? [
         "inline-flex items-center gap-[5px] px-[8px] py-[3px] rounded-full text-[11px]",
-        "border transition-colors",
+        "border transition-colors cursor-pointer",
         current
           ? "border-mist bg-bone-2 text-ink-2 hover:bg-paper-2"
           : "border-mist-2 bg-transparent text-slate-2 hover:text-ink hover:border-mist",
       ].join(" ")
     : [
         "inline-flex items-center gap-[6px] px-[10px] py-[5px] rounded-[6px] text-[11.5px]",
-        "border border-mist bg-bone-2 hover:bg-paper-2 transition-colors",
+        "border border-mist bg-bone-2 hover:bg-paper-2 transition-colors cursor-pointer",
         current ? "text-ink" : "text-slate-2",
       ].join(" ");
 
@@ -218,7 +218,7 @@ export function SpacePicker({
               <div className="max-h-[260px] overflow-y-auto">
                 <button
                   onClick={() => move(null)}
-                  className="w-full flex items-center gap-2 px-3 py-[7px] text-[12.5px] text-left text-ink hover:bg-paper-2"
+                  className="w-full flex items-center gap-2 px-3 py-[7px] text-[12.5px] text-left text-ink hover:bg-paper-2 cursor-pointer"
                 >
                   <span className="w-[14px] flex-shrink-0">
                     {!spaceId && <Check size={12} strokeWidth={1.8} />}
@@ -233,7 +233,7 @@ export function SpacePicker({
                     <button
                       key={s.id}
                       onClick={() => move(s.id)}
-                      className="w-full flex items-center gap-2 px-3 py-[7px] text-[12.5px] text-left text-ink hover:bg-paper-2"
+                      className="w-full flex items-center gap-2 px-3 py-[7px] text-[12.5px] text-left text-ink hover:bg-paper-2 cursor-pointer"
                     >
                       <span className="w-[14px] flex-shrink-0">
                         {s.id === spaceId && <Check size={12} strokeWidth={1.8} />}
@@ -248,7 +248,7 @@ export function SpacePicker({
               <div className="border-t border-mist mt-[3px] pt-[3px]">
                 <button
                   onClick={() => setCreating(true)}
-                  className="w-full flex items-center gap-2 px-3 py-[8px] text-[12.5px] text-left text-cortex-ink hover:bg-cortex-tint"
+                  className="w-full flex items-center gap-2 px-3 py-[8px] text-[12.5px] text-left text-cortex-ink hover:bg-cortex-tint cursor-pointer"
                 >
                   <FolderPlus size={13} strokeWidth={1.7} />
                   <span>{showCreate ? `Create "${query}"` : "New space"}</span>

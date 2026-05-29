@@ -6,6 +6,7 @@ import TrashIcon from "@/components/icons/TrashIcon";
 import type { AnimatedIconHandle } from "@/components/icons/types";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { Select } from "@/components/ui/Select";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Eyebrow } from "@/components/ui/typography";
 import { Card, ListCard } from "@/components/ui/Card";
@@ -14,7 +15,15 @@ import { ContextSourcePicker } from "@/components/context/ContextSourcePicker";
 import { SOURCE_PROVIDERS, type ProviderId } from "@/components/context/sources";
 import { useConfirm } from "@/components/ui/ConfirmModal";
 
-type Provider = "github" | "jira" | "figma" | "linear";
+type Provider =
+  | "github"
+  | "jira"
+  | "figma"
+  | "linear"
+  | "linkedin"
+  | "zoom"
+  | "slack"
+  | "gmail";
 
 // A preset is only the explicit attachments the user adds — pinned notes,
 // attached spaces (for recurring summaries), external sources, and
@@ -398,32 +407,31 @@ function SpaceContextPicker({
       <Eyebrow className="text-[10px]">Recurring context</Eyebrow>
       <div className="flex flex-wrap items-center gap-2 text-[12.5px] text-ink-2">
         <span>Pull the last</span>
-        <select
-          value={count}
-          onChange={(e) => onCountChange(parseInt(e.target.value, 10))}
+        <Select
+          size="sm"
+          aria-label="Number of recent summaries"
+          value={String(count)}
+          onChange={(v) => onCountChange(parseInt(v, 10))}
           disabled={!spaceId}
-          className="rounded-[6px] bg-bone-2 border border-mist px-2 py-[3px] text-[12px] text-ink outline-none disabled:opacity-50"
-        >
-          {[1, 2, 3, 5, 7, 10].map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
-        </select>
+          options={[1, 2, 3, 5, 7, 10].map((n) => ({
+            value: String(n),
+            label: String(n),
+          }))}
+        />
         <span>summaries from</span>
-        <select
+        <Select
+          size="sm"
+          aria-label="Space"
           value={spaceId ?? ""}
-          onChange={(e) => onSpaceChange(e.target.value || null)}
-          className="rounded-[6px] bg-bone-2 border border-mist px-2 py-[3px] text-[12px] text-ink outline-none"
-        >
-          <option value="">— no space —</option>
-          {spaces.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.icon ? `${s.icon} ` : ""}
-              {s.name}
-            </option>
-          ))}
-        </select>
+          onChange={(v) => onSpaceChange(v || null)}
+          options={[
+            { value: "", label: "— no space —" },
+            ...spaces.map((s) => ({
+              value: s.id,
+              label: `${s.icon ? `${s.icon} ` : ""}${s.name}`,
+            })),
+          ]}
+        />
       </div>
       <p className="font-mono text-[10.5px] uppercase tracking-[0.07em] text-slate-2 -mt-[2px]">
         Adds prior meeting summaries to this preset so recurring meetings keep continuity.

@@ -6,28 +6,43 @@ type Props = React.InputHTMLAttributes<HTMLInputElement> & {
   label?: React.ReactNode;
   hint?: string;
   error?: string;
+  tone?: "light" | "dark";
 };
 
 export const Input = React.forwardRef<HTMLInputElement, Props>(function Input(
-  { label, hint, error, className = "", id, ...rest },
+  { label, hint, error, className = "", id, tone = "light", ...rest },
   ref
 ) {
   const reactId = React.useId();
   const inputId = id ?? reactId;
+  const dark = tone === "dark";
   return (
     <label htmlFor={inputId} className="flex flex-col gap-[5px]">
       {label && (
-        <span className="text-[12px] font-medium text-ink-2">{label}</span>
+        <span
+          className={[
+            "text-[12px] font-medium",
+            dark ? "text-mist" : "text-ink-2",
+          ].join(" ")}
+        >
+          {label}
+        </span>
       )}
       <input
         ref={ref}
         id={inputId}
         className={[
-          "w-full rounded-[6px] px-3 py-[9px] text-[13px] text-ink",
+          "w-full rounded-[6px] px-3 py-[9px] text-[13px]",
+          dark ? "text-paper placeholder:text-slate-2" : "text-ink",
           "border outline-none transition-shadow duration-[120ms] ease-[var(--ease-out)]",
+          "focus:border-transparent focus:[box-shadow:0_0_0_3px_var(--cortex-tint),inset_0_0_0_1px_var(--cortex)]",
           error
-            ? "bg-[#FBF3F1] border-pulse"
-            : "bg-bone-2 border-mist focus:border-transparent focus:[box-shadow:0_0_0_3px_var(--cortex-tint),inset_0_0_0_1px_var(--cortex)]",
+            ? dark
+              ? "bg-white/[0.04] border-pulse"
+              : "bg-[#FBF3F1] border-pulse"
+            : dark
+              ? "bg-white/[0.04] border-white/15"
+              : "bg-bone-2 border-mist",
           className,
         ].join(" ")}
         {...rest}

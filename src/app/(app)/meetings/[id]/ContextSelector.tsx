@@ -1,12 +1,15 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { ChevronDown, Plus, SlidersHorizontal, X } from "lucide-react";
 import type { Provider } from "@/lib/composio";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { Eyebrow } from "@/components/ui/typography";
+import { Popover } from "@/components/ui/Popover";
 import { ContextChip, type ChipData } from "@/components/context/ContextChip";
 import { ContextSourcePicker } from "@/components/context/ContextSourcePicker";
 import { SOURCE_PROVIDERS, type ProviderId } from "@/components/context/sources";
+import { tagDisplay, type Tag } from "@/lib/tags";
 
 export type Selection = {
   // `include_notes` is the only ambient toggle left — opt-in cross-meeting
@@ -16,6 +19,9 @@ export type Selection = {
   external_context_ids: string[];
   note_ids: string[];
   space_id: string | null;
+  // The meeting's own applied tags, pulled forward for cross-meeting topic
+  // continuity. Seeded from the meeting and not user-toggled here.
+  tag_ids: string[];
   recent_summary_count: number;
   integrations: { provider: Provider }[];
 };
@@ -29,6 +35,7 @@ export function ContextSelector({
   integrations,
   githubConnected: _githubConnected,
   presetName,
+  tags = [],
 }: {
   selection: Selection;
   setSelection: (s: Selection) => void;
@@ -38,9 +45,44 @@ export function ContextSelector({
    *  GitHub-specific UI gate. Underscored to silence lint until wired. */
   githubConnected: boolean;
   presetName?: string | null;
+  /** Tags already applied to this meeting — seed the picker's display so the
+   *  pre-selected chips render without waiting on the library fetch. */
+  tags?: Tag[];
 }) {
-  const [open, setOpen] = useState(true);
   const [chips, setChips] = useState<ChipData[]>(initialChips);
+
+  // The full tag library, lazily fetched the first time the picker opens.
+  const [tagLibrary, setTagLibrary] = useState<Tag[] | null>(null);
+  const [tagPickerOpen, setTagPickerOpen] = useState(false);
+  const [tagQuery, setTagQuery] = useState("");
+
+  useEffect(() => {
+    if (!tagPickerOpen || tagLibrary !== null) return;
+    let cancelled = false;
+    (async () => {
+      const res = await fetch("/api/tags", { cache: "no-store" });
+      if (!res.ok || cancelled) return;
+      if (!cancelled) setTagLibrary((await res.json()) as Tag[]);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tagPickerOpen, tagLibrary]);
+
+  function addTag(id: string) {
+    setSelection({
+      ...selection,
+      tag_ids: Array.from(new Set([...selection.tag_ids, id])),
+    });
+    setTagQuery("");
+  }
+
+  function removeTag(id: string) {
+    setSelection({
+      ...selection,
+      tag_ids: selection.tag_ids.filter((x) => x !== id),
+    });
+  }
 
   function setChipChecked(id: string, checked: boolean) {
     setSelection({
@@ -97,34 +139,78 @@ export function ContextSelector({
   const allReady =
     checkedChips.length > 0 && checkedChips.every((c) => c.status === "ready");
 
+  // Resolve selected tag ids to display objects from whatever we know: the
+  // meeting's own tags (passed in) plus the lazily-fetched library.
+  const knownTags = new Map<string, Tag>();
+  for (const t of tags) knownTags.set(t.id, t);
+  for (const t of tagLibrary ?? []) knownTags.set(t.id, t);
+  const selectedTags = selection.tag_ids
+    .map((id) => knownTags.get(id))
+    .filter((t): t is Tag => !!t);
+  const selectedTagIds = new Set(selection.tag_ids);
+  const availableTags = (tagLibrary ?? [])
+    .filter((t) => !selectedTagIds.has(t.id))
+    .filter(
+      (t) =>
+        !tagQuery.trim() ||
+        tagDisplay(t).toLowerCase().includes(tagQuery.trim().toLowerCase())
+    );
+
+  // Compact summary shown on the collapsed trigger so the configured context is
+  // legible without opening the popover.
+  const summaryBits: string[] = [];
+  if (checkedChips.length > 0)
+    summaryBits.push(
+      `${checkedChips.length} source${checkedChips.length === 1 ? "" : "s"}`
+    );
+  if (selectedTags.length > 0)
+    summaryBits.push(
+      `${selectedTags.length} tag${selectedTags.length === 1 ? "" : "s"}`
+    );
+  if (selection.include_notes) summaryBits.push("all notes");
+  const liveSelected = selection.integrations.filter((i) =>
+    liveProviders.includes(i.provider)
+  ).length;
+  if (liveSelected > 0) summaryBits.push(`${liveSelected} live`);
+  const summaryText =
+    checkedChips.length > 0 && !allReady
+      ? "indexing…"
+      : summaryBits.length > 0
+        ? summaryBits.join(" · ")
+        : "no sources selected";
+
   return (
-    <div className="bg-bone-2 border border-mist rounded-[10px] overflow-hidden">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center justify-between px-[14px] py-[9px] bg-transparent border-0 cursor-pointer font-mono text-[11px] uppercase tracking-[0.08em] text-slate-2"
-      >
-        <span className="flex items-center gap-2">
-          Context
-          {checkedChips.length > 0 && (
-            <span
-              className={[
-                "font-sans normal-case tracking-normal text-[10.5px]",
-                allReady ? "text-echo-ink" : "text-slate",
-              ].join(" ")}
-            >
-              {allReady ? "all sources ready" : "indexing…"}
+    <Popover
+      align="start"
+      width={400}
+      className="max-h-[70vh] overflow-y-auto"
+      trigger={
+        <button
+          type="button"
+          className="inline-flex items-center gap-[8px] rounded-[8px] border border-mist bg-bone-2 px-[12px] py-[7px] cursor-pointer transition-colors hover:bg-paper-2"
+        >
+          <SlidersHorizontal size={13} strokeWidth={1.7} className="text-slate-2" />
+          <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-slate-2">
+            Context
+          </span>
+          <span
+            className={[
+              "text-[11px]",
+              checkedChips.length > 0 && !allReady ? "text-slate" : "text-slate-2",
+            ].join(" ")}
+          >
+            {summaryText}
+          </span>
+          {presetName && (
+            <span className="text-[11px] font-medium text-cortex-ink bg-cortex-tint px-[7px] py-[2px] rounded-full">
+              {presetName}
             </span>
           )}
-        </span>
-        {presetName && (
-          <span className="font-sans text-[11px] font-medium text-cortex-ink bg-cortex-tint px-2 py-[2px] rounded-full normal-case tracking-normal">
-            {presetName}
-          </span>
-        )}
-      </button>
-
-      {open && (
-        <div className="border-t border-mist p-3 flex flex-col gap-[12px]">
+          <ChevronDown size={13} strokeWidth={1.7} className="text-slate-2" />
+        </button>
+      }
+    >
+      <div className="flex flex-col gap-[12px]">
           <Checkbox
             checked={selection.include_notes}
             onChange={(v) => setSelection({ ...selection, include_notes: v })}
@@ -179,6 +265,76 @@ export function ContextSelector({
             )}
           </div>
 
+          <div className="flex flex-col gap-2">
+            <Eyebrow className="text-[10px]">Tagged meetings</Eyebrow>
+            {selectedTags.length > 0 ? (
+              <div className="flex flex-wrap gap-[6px]">
+                {selectedTags.map((t) => (
+                  <span
+                    key={t.id}
+                    className="inline-flex items-center gap-[5px] pl-[9px] pr-[5px] py-[3px] rounded-full text-[11px] border border-mist bg-paper-2 text-ink-2"
+                  >
+                    <TagText tag={t} />
+                    <button
+                      onClick={() => removeTag(t.id)}
+                      aria-label={`Remove ${tagDisplay(t)}`}
+                      className="grid place-content-center w-[14px] h-[14px] rounded-full text-slate-2 hover:text-ink hover:bg-mist bg-transparent border-0 cursor-pointer"
+                    >
+                      <X size={10} strokeWidth={2} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11.5px] text-slate-2 m-0">
+                Add a tag to pull in context from meetings that share it.
+              </p>
+            )}
+
+            <div>
+              <button
+                onClick={() => setTagPickerOpen((o) => !o)}
+                className="inline-flex items-center gap-[4px] px-[8px] py-[3px] rounded-full text-[11px] border border-dashed border-mist-2 text-slate-2 hover:text-ink hover:border-mist bg-transparent transition-colors cursor-pointer"
+              >
+                <Plus size={11} strokeWidth={1.8} />
+                Add tag
+              </button>
+
+              {tagPickerOpen && (
+                <div className="mt-2 rounded-[8px] border border-mist bg-bone-2 p-[6px]">
+                  <input
+                    value={tagQuery}
+                    onChange={(e) => setTagQuery(e.target.value)}
+                    placeholder="Search tags…"
+                    autoFocus
+                    className="w-full rounded-[6px] border border-mist bg-paper-2 px-2 py-[5px] text-[12px] text-ink outline-none mb-1"
+                  />
+                  <div className="max-h-[160px] overflow-y-auto">
+                    {availableTags.length === 0 ? (
+                      <p className="px-2 py-[6px] text-[11.5px] text-slate-2 m-0">
+                        {tagLibrary === null
+                          ? "Loading…"
+                          : tagQuery.trim()
+                          ? "No matches."
+                          : "No tags yet — add tags to a meeting first."}
+                      </p>
+                    ) : (
+                      availableTags.map((t) => (
+                        <button
+                          key={t.id}
+                          onClick={() => addTag(t.id)}
+                          className="w-full flex items-center gap-2 px-2 py-[6px] text-[12.5px] text-left text-ink hover:bg-paper-2 rounded-[5px] cursor-pointer"
+                        >
+                          <TagText tag={t} />
+                        </button>
+                      ))
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           {liveProviders.length > 0 && (
             <div className="flex flex-col gap-1">
               <Eyebrow className="text-[10px]">Live integrations</Eyebrow>
@@ -193,8 +349,20 @@ export function ContextSelector({
               ))}
             </div>
           )}
-        </div>
-      )}
-    </div>
+      </div>
+    </Popover>
   );
+}
+
+function TagText({ tag }: { tag: Tag }) {
+  if (tag.label_key) {
+    return (
+      <span className="truncate">
+        <span className="text-cortex-ink font-medium">{tag.label_key}</span>
+        <span className="text-slate-2">: </span>
+        {tag.value}
+      </span>
+    );
+  }
+  return <span className="truncate">{tag.value}</span>;
 }

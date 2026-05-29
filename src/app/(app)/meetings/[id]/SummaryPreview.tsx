@@ -3,6 +3,13 @@ import { ChevronLeft, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Eyebrow } from "@/components/ui/typography";
 import { SummarySection } from "./SummarySection";
+import { MeetingTags } from "./MeetingTags";
+import type {
+  CreatedTicket,
+  SummaryExtrasData,
+} from "./SummaryExtras";
+import type { TicketProvider } from "@/lib/tickets";
+import type { Tag } from "@/lib/tags";
 
 // Calm read-mode for ended meetings: shows the summary front-and-center, with
 // a "Continue meeting" escape hatch in the header that flips the same URL
@@ -16,6 +23,10 @@ export function SummaryPreview({
   endedAt,
   noteCount,
   presetName,
+  summaryExtras,
+  createdTickets,
+  ticketProviders,
+  tags,
 }: {
   meetingId: string;
   title: string;
@@ -25,13 +36,17 @@ export function SummaryPreview({
   endedAt: string | null;
   noteCount: number;
   presetName: string | null;
+  summaryExtras: SummaryExtrasData;
+  createdTickets: CreatedTicket[];
+  ticketProviders: TicketProvider[];
+  tags: Tag[];
 }) {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-paper">
       <header className="flex items-center justify-between gap-[14px] px-[22px] py-[14px] border-b border-mist bg-bone-2">
         <div className="flex items-center gap-[14px] min-w-0 overflow-hidden">
           <Link
-            href="/"
+            href="/meetings"
             className="flex items-center gap-1 font-mono text-[11px] uppercase tracking-[0.07em] text-slate hover:text-ink transition-colors flex-shrink-0"
           >
             <ChevronLeft size={12} strokeWidth={1.6} />
@@ -65,6 +80,10 @@ export function SummaryPreview({
           {/* Calm metadata strip — date, duration, note count */}
           <Eyebrow className="mb-[10px]">{metaLine(startedAt, endedAt, noteCount)}</Eyebrow>
 
+          <div className="mb-[20px]">
+            <MeetingTags meetingId={meetingId} initialTags={tags} />
+          </div>
+
           {summaryTitle && (
             <h1 className="font-display text-[44px] font-normal leading-[1.05] tracking-[-0.018em] text-ink m-0 mb-[24px]">
               {summaryTitle}
@@ -75,6 +94,9 @@ export function SummaryPreview({
             meetingId={meetingId}
             initialTitle={null /* title rendered above as the display heading */}
             initialSummary={summary}
+            initialExtras={summaryExtras}
+            initialCreatedTickets={createdTickets}
+            integrations={ticketProviders}
           />
         </div>
       </main>

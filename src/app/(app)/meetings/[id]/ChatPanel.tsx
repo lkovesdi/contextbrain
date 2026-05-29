@@ -2,6 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   BookmarkMinus,
   BookmarkPlus,
@@ -9,11 +11,13 @@ import {
   ImageOff,
   Loader2,
   RotateCw,
+  Zap,
 } from "lucide-react";
 import { useImageLoadState } from "@/lib/useImageLoadState";
 import { ContextSelector, type Selection } from "./ContextSelector";
 import type { Provider } from "@/lib/composio";
 import type { ChipData } from "@/components/context/ContextChip";
+import type { Tag } from "@/lib/tags";
 import { Button } from "@/components/ui/Button";
 import SendIcon from "@/components/icons/SendIcon";
 import type { AnimatedIconHandle } from "@/components/icons/types";
@@ -31,7 +35,8 @@ type PresetSources = {
 function defaultSelection(
   chips: ChipData[],
   integrations: string[],
-  preset: PresetSources
+  preset: PresetSources,
+  tagIds: string[]
 ): Selection {
   if (!preset) {
     return {
@@ -39,6 +44,7 @@ function defaultSelection(
       external_context_ids: [],
       note_ids: [],
       space_id: null,
+      tag_ids: tagIds,
       recent_summary_count: 3,
       integrations: [],
     };
@@ -52,6 +58,7 @@ function defaultSelection(
     ),
     note_ids: preset.note_ids ?? [],
     space_id: preset.space_id ?? null,
+    tag_ids: tagIds,
     recent_summary_count: preset.recent_summary_count ?? 3,
     integrations: Object.keys(preset.integrations ?? {})
       .filter((p): p is Provider => validIntegrations.has(p))
@@ -72,6 +79,7 @@ export function ChatPanel({
   githubConnected,
   presetSources,
   presetName,
+  tags = [],
   initialPinnedImages = [],
 }: {
   meetingId: string;
@@ -80,10 +88,11 @@ export function ChatPanel({
   githubConnected: boolean;
   presetSources: PresetSources;
   presetName?: string | null;
+  tags?: Tag[];
   initialPinnedImages?: PinnedImage[];
 }) {
   const [selection, setSelection] = useState<Selection>(() =>
-    defaultSelection(chips, integrations, presetSources)
+    defaultSelection(chips, integrations, presetSources, tags.map((t) => t.id))
   );
   const [pinnedUrls, setPinnedUrls] = useState<Set<string>>(
     () => new Set(initialPinnedImages.map((p) => p.url))
@@ -142,6 +151,23 @@ export function ChatPanel({
     });
   }, [messages, streaming]);
 
+  // Read a text stream into the trailing (empty) assistant message.
+  async function consume(res: Response) {
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let acc = "";
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      acc += decoder.decode(value, { stream: true });
+      setMessages((m) => {
+        const copy = [...m];
+        copy[copy.length - 1] = { role: "assistant", content: acc };
+        return copy;
+      });
+    }
+  }
+
   async function send() {
     const content = input.trim();
     if (!content || streaming) return;
@@ -168,21 +194,40 @@ export function ChatPanel({
         setMessages((m) => m.slice(0, -1));
         return;
       }
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let acc = "";
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-        acc += decoder.decode(value, { stream: true });
-        setMessages((m) => {
-          const copy = [...m];
-          copy[copy.length - 1] = { role: "assistant", content: acc };
-          return copy;
-        });
-      }
+      await consume(res);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Chat failed");
+      setMessages((m) => m.slice(0, -1));
+    } finally {
+      setStreaming(false);
+    }
+  }
+
+  // Quick recap: 4–5 catch-up bullets for the whole meeting, then a one-paragraph
+  // recap of the last ~5 minutes. Grounded in the live transcript server-side.
+  async function catchUp() {
+    if (streaming) return;
+    setError(null);
+    setMessages((m) => [
+      ...m,
+      { role: "user", content: "Catch me up" },
+      { role: "assistant", content: "" },
+    ]);
+    setStreaming(true);
+
+    try {
+      const res = await fetch(`/api/meetings/${meetingId}/catch-up`, {
+        method: "POST",
+      });
+      if (!res.ok || !res.body) {
+        const errText = await res.text().catch(() => "Catch-up failed");
+        setError(errText || "Catch-up failed");
+        setMessages((m) => m.slice(0, -1));
+        return;
+      }
+      await consume(res);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Catch-up failed");
       setMessages((m) => m.slice(0, -1));
     } finally {
       setStreaming(false);
@@ -198,6 +243,7 @@ export function ChatPanel({
         integrations={integrations}
         githubConnected={githubConnected}
         presetName={presetName ?? null}
+        tags={tags}
       />
 
       <div
@@ -227,33 +273,47 @@ export function ChatPanel({
         </p>
       )}
 
-      <div className="flex gap-2 items-end">
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send();
+      <div className="flex flex-col gap-2">
+        <div className="flex">
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={catchUp}
+            disabled={streaming}
+            leftIcon={<Zap size={13} strokeWidth={1.7} />}
+          >
+            Catch me up
+          </Button>
+        </div>
+        <div className="flex items-stretch gap-2">
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
+            }}
+            rows={2}
+            placeholder="Ask… (⌘K)"
+            className="flex-1 resize-none rounded-[6px] border border-mist bg-bone-2 text-[13px] leading-[1.5] text-ink px-3 py-[9px] outline-none"
+          />
+          <Button
+            variant="primary"
+            onClick={send}
+            disabled={streaming || !input.trim()}
+            className="self-stretch"
+            onMouseEnter={() => sendIconRef.current?.startAnimation()}
+            onMouseLeave={() => sendIconRef.current?.stopAnimation()}
+            rightIcon={
+              <SendIcon ref={sendIconRef} size={14} strokeWidth={1.6} />
             }
-          }}
-          rows={2}
-          placeholder="Ask… (⌘K)"
-          className="flex-1 resize-none rounded-[6px] border border-mist bg-bone-2 text-[13px] leading-[1.5] text-ink px-3 py-[9px] outline-none"
-        />
-        <Button
-          variant="primary"
-          onClick={send}
-          disabled={streaming || !input.trim()}
-          onMouseEnter={() => sendIconRef.current?.startAnimation()}
-          onMouseLeave={() => sendIconRef.current?.stopAnimation()}
-          rightIcon={
-            <SendIcon ref={sendIconRef} size={14} strokeWidth={1.6} />
-          }
-        >
-          {streaming ? "…" : "Send"}
-        </Button>
+          >
+            {streaming ? "…" : "Send"}
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -271,7 +331,7 @@ function ChatMsg({
   onTogglePin: (url: string, alt: string, label: string) => void;
 }) {
   const isUser = msg.role === "user";
-  const role = isUser ? "You" : "MeetingBrain";
+  const role = isUser ? "You" : "ContextBrain";
   return (
     <div className="flex flex-col gap-[5px]">
       <div className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.08em] text-slate-2">
@@ -285,8 +345,16 @@ function ChatMsg({
         </span>
         {role}
       </div>
-      <div className="text-[14px] leading-[1.6] text-ink whitespace-pre-wrap">
-        {renderWithImages(msg.content, pinnedUrls, onTogglePin)}
+      <div className="text-[14px] leading-[1.6] text-ink">
+        {isUser ? (
+          <div className="whitespace-pre-wrap">{msg.content}</div>
+        ) : (
+          <AssistantMarkdown
+            content={msg.content}
+            pinnedUrls={pinnedUrls}
+            onTogglePin={onTogglePin}
+          />
+        )}
         {!msg.content && streaming && "…"}
         {streaming && msg.content && (
           <span
@@ -298,42 +366,125 @@ function ChatMsg({
   );
 }
 
-// Splits assistant text on markdown image syntax `![alt](url)` and renders
-// each image as a thumbnailed <img> alongside surrounding text. Ignores any
-// non-/api/ URL by default — keeps us from rendering arbitrary outbound
-// images. Right-click on an image opens a small menu (pin to summary, open).
-function renderWithImages(
-  text: string,
-  pinnedUrls: Set<string>,
-  onTogglePin: (url: string, alt: string, label: string) => void
-): React.ReactNode[] {
-  if (!text) return [];
-  const re = /!\[([^\]]*)\]\(([^)]+)\)/g;
-  const out: React.ReactNode[] = [];
-  let last = 0;
-  let i = 0;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(text)) !== null) {
-    if (m.index > last) out.push(text.slice(last, m.index));
-    const [, alt, url] = m;
-    const safe = url.startsWith("/api/") || url.startsWith("https://");
-    if (safe) {
-      out.push(
-        <ChatImage
-          key={`img-${i++}`}
-          url={url}
-          alt={alt || ""}
-          isPinned={pinnedUrls.has(url)}
-          onTogglePin={() => onTogglePin(url, alt || "", alt || "")}
-        />
-      );
-    } else {
-      out.push(m[0]);
-    }
-    last = re.lastIndex;
-  }
-  if (last < text.length) out.push(text.slice(last));
-  return out;
+// Renders assistant markdown (headings, lists, blockquotes, code, etc.) and
+// routes images through ChatImage so the pin-to-summary right-click menu
+// keeps working. Non-/api/ and non-https image URLs are rendered as text to
+// avoid pulling in arbitrary outbound assets.
+function AssistantMarkdown({
+  content,
+  pinnedUrls,
+  onTogglePin,
+}: {
+  content: string;
+  pinnedUrls: Set<string>;
+  onTogglePin: (url: string, alt: string, label: string) => void;
+}) {
+  return (
+    <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          h1: ({ children }) => (
+            <h3 className="text-[15px] font-semibold text-ink mt-3 mb-1.5 first:mt-0">
+              {children}
+            </h3>
+          ),
+          h2: ({ children }) => (
+            <h4 className="text-[14px] font-semibold text-ink mt-3 mb-1.5 first:mt-0">
+              {children}
+            </h4>
+          ),
+          h3: ({ children }) => (
+            <h5 className="text-[13.5px] font-semibold text-ink mt-2.5 mb-1 first:mt-0">
+              {children}
+            </h5>
+          ),
+          h4: ({ children }) => (
+            <h6 className="text-[13px] font-semibold text-ink mt-2 mb-1 first:mt-0">
+              {children}
+            </h6>
+          ),
+          p: ({ children }) => (
+            <p className="my-1.5 first:mt-0 last:mb-0">{children}</p>
+          ),
+          ul: ({ children }) => (
+            <ul className="list-disc pl-5 my-1.5 space-y-[3px]">{children}</ul>
+          ),
+          ol: ({ children }) => (
+            <ol className="list-decimal pl-5 my-1.5 space-y-[3px]">{children}</ol>
+          ),
+          li: ({ children }) => (
+            <li className="leading-[1.55] [&>p]:my-0">{children}</li>
+          ),
+          blockquote: ({ children }) => (
+            <blockquote className="border-l-2 border-mist pl-3 my-1.5 text-slate [&>p]:my-0">
+              {children}
+            </blockquote>
+          ),
+          hr: () => <hr className="my-2.5 border-0 border-t border-mist" />,
+          strong: ({ children }) => (
+            <strong className="font-semibold text-ink">{children}</strong>
+          ),
+          em: ({ children }) => <em className="italic">{children}</em>,
+          a: ({ href, children }) => (
+            <a
+              href={href}
+              target="_blank"
+              rel="noreferrer"
+              className="text-cortex underline underline-offset-2"
+            >
+              {children}
+            </a>
+          ),
+          pre: ({ children }) => (
+            <pre className="my-2 rounded-[6px] bg-paper-2 border border-mist p-2 font-mono text-[12px] overflow-x-auto">
+              {children}
+            </pre>
+          ),
+          code: ({ className, children, ...rest }) => {
+            if (className?.startsWith("language-")) {
+              return (
+                <code className={className} {...rest}>
+                  {children}
+                </code>
+              );
+            }
+            return (
+              <code className="rounded-[4px] bg-paper-2 border border-mist px-[5px] py-[1px] font-mono text-[12px]">
+                {children}
+              </code>
+            );
+          },
+          table: ({ children }) => (
+            <div className="my-2 overflow-x-auto">
+              <table className="border-collapse text-[13px]">{children}</table>
+            </div>
+          ),
+          th: ({ children }) => (
+            <th className="border border-mist px-2 py-1 text-left font-semibold bg-paper-2">
+              {children}
+            </th>
+          ),
+          td: ({ children }) => (
+            <td className="border border-mist px-2 py-1 align-top">{children}</td>
+          ),
+          img: ({ src, alt }) => {
+            if (typeof src !== "string") return null;
+            const safe = src.startsWith("/api/") || src.startsWith("https://");
+            if (!safe) return <>{`![${alt ?? ""}](${src})`}</>;
+            return (
+              <ChatImage
+                url={src}
+                alt={alt || ""}
+                isPinned={pinnedUrls.has(src)}
+                onTogglePin={() => onTogglePin(src, alt || "", alt || "")}
+              />
+            );
+          },
+        }}
+    >
+      {content}
+    </ReactMarkdown>
+  );
 }
 
 // ----- Chat image with right-click menu -----------------------------------
@@ -395,7 +546,7 @@ function ChatImage({
         {loader.state === "errored" && (
           <FrameImagePlaceholder
             tone="errored"
-            label="Couldn't render — retrying in 90s"
+            label="Couldn't render — retrying…"
             isPinned={isPinned}
             onRetry={(e) => {
               e.preventDefault();

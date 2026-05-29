@@ -22,7 +22,7 @@ type NavEntry = {
 );
 
 const NAV: NavEntry[] = [
-  { kind: "static",   href: "/",             label: "Meetings",     icon: Mic,          match: (p) => p === "/" || p.startsWith("/meetings") },
+  { kind: "static",   href: "/meetings",     label: "Meetings",     icon: Mic,          match: (p) => p.startsWith("/meetings") },
   { kind: "static",   href: "/spaces",       label: "Spaces",       icon: FolderClosed, match: (p) => p.startsWith("/spaces") },
   { kind: "static",   href: "/contexts",     label: "Contexts",     icon: Database,     match: (p) => p.startsWith("/contexts") },
   { kind: "animated", href: "/presets",      label: "Presets",      icon: "bookmark",   match: (p) => p.startsWith("/presets") },
@@ -38,16 +38,29 @@ const ROW_CLASSES = (active: boolean) =>
 
 const ICON_COLOR = (active: boolean) => (active ? "text-cortex" : "text-slate");
 
-export function Sidebar({ userEmail }: { userEmail: string }) {
+export function Sidebar({
+  userEmail,
+  orgName,
+}: {
+  userEmail: string;
+  orgName?: string | null;
+}) {
   const pathname = usePathname();
 
   return (
     <aside className="hidden md:flex md:flex-col w-[224px] flex-shrink-0 bg-bone-2 border-r border-mist p-[18px] gap-[22px]">
-      <Link href="/" className="flex items-center gap-[10px] px-1 py-0.5 -mx-1">
-        <LogoMark size={22} />
-        <span className="font-display text-[22px] tracking-[-0.015em] text-ink leading-none">
-          MeetingBrain
+      <Link href="/meetings" className="flex flex-col gap-[6px] px-1 py-0.5 -mx-1">
+        <span className="flex items-center gap-[10px]">
+          <LogoMark size={22} />
+          <span className="font-display text-[22px] tracking-[-0.015em] text-ink leading-none">
+            ContextBrain
+          </span>
         </span>
+        {orgName && (
+          <span className="font-mono text-[10px] uppercase tracking-[0.08em] text-slate-2 truncate pl-[1px]">
+            {orgName}
+          </span>
+        )}
       </Link>
 
       <nav className="flex flex-col gap-[2px]">

@@ -6,15 +6,27 @@ import { RefreshCw } from "lucide-react";
 import { Eyebrow } from "@/components/ui/typography";
 import { SummaryMarkdown } from "@/components/ui/SummaryMarkdown";
 import { Button } from "@/components/ui/Button";
+import {
+  SummaryExtras,
+  type CreatedTicket,
+  type SummaryExtrasData,
+} from "./SummaryExtras";
+import type { TicketProvider } from "@/lib/tickets";
 
 export function SummarySection({
   meetingId,
   initialTitle,
   initialSummary,
+  initialExtras = {},
+  initialCreatedTickets = [],
+  integrations = [],
 }: {
   meetingId: string;
   initialTitle: string | null;
   initialSummary: string;
+  initialExtras?: SummaryExtrasData;
+  initialCreatedTickets?: CreatedTicket[];
+  integrations?: TicketProvider[];
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState(false);
@@ -23,6 +35,7 @@ export function SummarySection({
   // immediately, without waiting on the round-trip refresh.
   const [title, setTitle] = useState(initialTitle);
   const [summary, setSummary] = useState(initialSummary);
+  const [extras, setExtras] = useState<SummaryExtrasData>(initialExtras);
 
   async function regenerate() {
     setBusy(true);
@@ -38,6 +51,7 @@ export function SummarySection({
       }
       if (typeof j.title === "string") setTitle(j.title);
       if (typeof j.summary === "string") setSummary(j.summary);
+      if (j.extras && typeof j.extras === "object") setExtras(j.extras);
       // Re-fetch server data so any related panels (sidebar, etc.) update too.
       router.refresh();
     } catch (e) {
@@ -74,6 +88,13 @@ export function SummarySection({
         </h2>
       )}
       <SummaryMarkdown source={summary} />
+
+      <SummaryExtras
+        meetingId={meetingId}
+        extras={extras}
+        integrations={integrations}
+        initialCreatedTickets={initialCreatedTickets}
+      />
 
       {error && (
         <p className="mt-3 rounded-[6px] border border-pulse bg-pulse-tint px-3 py-2 text-[12px] text-pulse-ink">

@@ -56,6 +56,31 @@ export type SourceProviderConfig = {
     child: ChildItem | null,
     currentPath: string
   ) => unknown;
+
+  // Optional: when a container has multiple "scopes" the user can drill into
+  // besides the default file/child tree (e.g. GitHub repo → branches, PRs).
+  // Picker renders these as a tab strip at the top of the children view.
+  // Each non-default mode shows a flat list (no recursion); clicking an item
+  // adds it as a chip directly via `modeChildToPayload`.
+  intermediateModes?: {
+    // The first item is treated as the default (the existing tree view) and
+    // doesn't need a `listForMode` — set its key to "__default".
+    modes: Array<{ key: string; label: string }>;
+    // Returns the flat list of items shown when `activeMode` ≠ "__default".
+    listForMode: (
+      container: ContainerItem,
+      modeKey: string,
+      query: string
+    ) => Promise<ChildItem[]>;
+    // Empty-state hint when listForMode returns 0 items.
+    emptyHintForMode?: (modeKey: string) => string;
+    // Build the request body for "add this branch/PR/etc."
+    modeChildToPayload: (
+      container: ContainerItem,
+      modeKey: string,
+      child: ChildItem
+    ) => unknown;
+  };
 };
 
 // ---------------- Helpers ----------------
@@ -154,6 +179,90 @@ const githubProvider: SourceProviderConfig = {
       ref,
       path: child.id,
     };
+  },
+
+  intermediateModes: {
+    modes: [
+      { key: "__default", label: "Files" },
+      { key: "branches", label: "Branches" },
+      { key: "prs", label: "Pull requests" },
+    ],
+    async listForMode(container, modeKey, query) {
+      const owner = String(container.raw.owner ?? "");
+      const repo = String(container.raw.name ?? "");
+      if (modeKey === "branches") {
+        const params = new URLSearchParams({ owner, repo, q: query });
+        const r = await getJson(`/api/github/branches?${params.toString()}`);
+        if (!r.ok) throw new Error(r.error);
+        const branches =
+          ((r.data as { branches?: Array<Record<string, unknown>> }).branches ?? []);
+        return branches.map((b) => ({
+          id: `branch:${String(b.name ?? "")}`,
+          display: String(b.name ?? ""),
+          secondary: b.protected ? "protected" : null,
+          meta: typeof b.sha === "string" ? (b.sha as string).slice(0, 7) : null,
+          iconKind: "folder",
+          isNavigable: false,
+          raw: b,
+        }));
+      }
+      if (modeKey === "prs") {
+        const params = new URLSearchParams({ owner, repo, q: query, state: "open" });
+        const r = await getJson(`/api/github/prs?${params.toString()}`);
+        if (!r.ok) throw new Error(r.error);
+        const prs =
+          ((r.data as { prs?: Array<Record<string, unknown>> }).prs ?? []);
+        return prs.map((p) => {
+          const number = typeof p.number === "number" ? p.number : Number(p.number);
+          const draft = !!p.draft;
+          const merged = !!p.merged;
+          const state = String(p.state ?? "open");
+          const statusLabel = merged ? "merged" : draft ? "draft" : state;
+          return {
+            id: `pr:${number}`,
+            display: `#${number} · ${String(p.title ?? "")}`,
+            secondary: p.author ? `by ${p.author}` : null,
+            meta: statusLabel,
+            iconKind: "ticket",
+            isNavigable: false,
+            raw: p,
+          } as ChildItem;
+        });
+      }
+      return [];
+    },
+    emptyHintForMode(modeKey) {
+      if (modeKey === "branches") return "No branches match.";
+      if (modeKey === "prs") return "No open PRs match. Try a different repo.";
+      return "Nothing here.";
+    },
+    modeChildToPayload(container, modeKey, child) {
+      const owner = String(container.raw.owner ?? "");
+      const repo = String(container.raw.name ?? "");
+      if (modeKey === "branches") {
+        return {
+          kind: "branch",
+          owner,
+          repo,
+          branch: String(child.raw.name ?? ""),
+          branch_sha: String(child.raw.sha ?? ""),
+        };
+      }
+      if (modeKey === "prs") {
+        const number =
+          typeof child.raw.number === "number"
+            ? child.raw.number
+            : Number(child.raw.number);
+        return {
+          kind: "pr",
+          owner,
+          repo,
+          pr_number: number,
+          pr_title: String(child.raw.title ?? ""),
+        };
+      }
+      return {};
+    },
   },
 };
 

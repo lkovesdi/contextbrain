@@ -1,0 +1,5 @@
+- Jira tickets creation from chat and meeting summaries
+- Suggestions for Jira tickets and epics - list them under summary make them look like jira tickets
+- Have the system create a summary section that.. heard meeting questions and then the decisions made.. List them out.. also list out outlying items that were discussed but not decided on. And rabbit hole into other sections of the meeting.
+- github to be able to pick out commits and branches and Prs.
+- allow user to add skills to the system and have it use them to answer questions. - skill section

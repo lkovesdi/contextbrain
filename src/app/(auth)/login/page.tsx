@@ -1,10 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
-import { LogoMark } from "@/components/ui/Logo";
+import { AuthShell } from "../AuthShell";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -18,9 +19,7 @@ export default function LoginPage() {
     const supabase = createClient();
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: {
-        emailRedirectTo: `${window.location.origin}/auth/callback`,
-      },
+      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
     });
     if (error) {
       setErrorMsg(error.message);
@@ -31,47 +30,64 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-paper p-6">
-      <div
-        className="w-full max-w-[400px] flex flex-col gap-6 rounded-[14px] border border-mist bg-bone-2 p-8"
-        style={{ boxShadow: "var(--shadow-1)" }}
-      >
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center gap-[10px]">
-            <LogoMark size={28} />
-            <span className="font-display text-[28px] tracking-[-0.015em] text-ink leading-none">
-              MeetingBrain
-            </span>
-          </div>
-          <p className="text-[14px] text-slate m-0">Sign in with a magic link.</p>
-        </div>
-
-        {status === "sent" ? (
-          <p className="rounded-[6px] bg-echo-tint border border-echo p-3 text-[13px] text-echo-ink m-0">
-            Check <span className="font-medium">{email}</span> for a sign-in link.
-          </p>
-        ) : (
-          <form onSubmit={onSubmit} className="flex flex-col gap-4">
-            <Input
-              type="email"
-              required
-              label="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-              error={errorMsg ?? undefined}
-            />
-            <Button
-              type="submit"
-              variant="ink"
-              disabled={status === "sending"}
-              className="w-full justify-center"
-            >
-              {status === "sending" ? "Sending…" : "Send magic link"}
-            </Button>
-          </form>
-        )}
+    <AuthShell>
+      <div className="flex flex-col gap-2">
+        <h2 className="font-display text-[32px] leading-[1.1] tracking-[-0.015em] text-paper">
+          Welcome back
+        </h2>
+        <p className="m-0 text-[14px] text-mist">
+          Sign in with a magic link — no password to remember.
+        </p>
       </div>
-    </main>
+
+      {status === "sent" ? (
+        <div className="flex flex-col gap-4">
+          <div className="rounded-[8px] border border-echo/40 bg-echo/10 p-4 text-[13px] text-echo-tint">
+            Check <span className="font-medium text-paper">{email}</span> for a sign-in
+            link. It expires in a few minutes.
+          </div>
+          <button
+            type="button"
+            onClick={() => setStatus("idle")}
+            className="cursor-pointer self-start text-[13px] text-mist transition-colors hover:text-paper"
+          >
+            Use a different email
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+          <Input
+            type="email"
+            required
+            tone="dark"
+            label="Work email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@company.com"
+            autoFocus
+            error={errorMsg ?? undefined}
+          />
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            disabled={status === "sending"}
+            className="w-full justify-center"
+          >
+            {status === "sending" ? "Sending…" : "Send magic link"}
+          </Button>
+        </form>
+      )}
+
+      <p className="m-0 text-[13px] text-mist">
+        New here?{" "}
+        <Link
+          href="/signup"
+          className="cursor-pointer font-medium text-cortex-tint-2 hover:text-paper"
+        >
+          Create an organization
+        </Link>
+      </p>
+    </AuthShell>
   );
 }

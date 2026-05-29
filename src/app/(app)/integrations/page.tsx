@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { IntegrationCard } from "./IntegrationCard";
 import { Eyebrow, PageHeading, PageSubhead } from "@/components/ui/typography";
+import { getToolkitLogos } from "@/lib/composio";
 
 export const dynamic = "force-dynamic";
 
@@ -33,13 +34,42 @@ const PROVIDERS = [
     logo: "LN",
     bg: "#5E6AD2",
   },
+  {
+    id: "linkedin",
+    label: "LinkedIn",
+    description: "Reference your LinkedIn activity and network.",
+    logo: "IN",
+    bg: "#0A66C2",
+  },
+  {
+    id: "zoom",
+    label: "Zoom",
+    description: "Connect Zoom for meeting metadata and recordings.",
+    logo: "ZM",
+    bg: "#2D8CFF",
+  },
+  {
+    id: "slack",
+    label: "Slack",
+    description: "Surface recent messages from your workspaces.",
+    logo: "SL",
+    bg: "#4A154B",
+  },
+  {
+    id: "gmail",
+    label: "Gmail",
+    description: "Pull context from recent email threads.",
+    logo: "GM",
+    bg: "#EA4335",
+  },
 ] as const;
 
 export default async function IntegrationsPage() {
   const supabase = await createClient();
-  const { data: rows } = await supabase
-    .from("integrations")
-    .select("provider,metadata,connected_at");
+  const [{ data: rows }, logos] = await Promise.all([
+    supabase.from("integrations").select("provider,metadata,connected_at"),
+    getToolkitLogos(),
+  ]);
   const byProvider = new Map((rows ?? []).map((r) => [r.provider, r] as const));
 
   return (
@@ -47,7 +77,7 @@ export default async function IntegrationsPage() {
       <header className="mb-[30px]">
         <PageHeading>Integrations</PageHeading>
         <PageSubhead>
-          Connect external tools so MeetingBrain can pull relevant context into chat.
+          Connect external tools so ContextBrain can pull relevant context into chat.
         </PageSubhead>
       </header>
 
@@ -66,6 +96,7 @@ export default async function IntegrationsPage() {
               description={p.description}
               logo={p.logo}
               logoBg={p.bg}
+              logoUrl={logos[p.id] ?? null}
               connected={connected}
               pending={status === "pending"}
             />

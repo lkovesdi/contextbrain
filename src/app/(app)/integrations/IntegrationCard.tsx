@@ -6,7 +6,15 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { useConfirm } from "@/components/ui/ConfirmModal";
 
-type Provider = "github" | "jira" | "figma" | "linear";
+type Provider =
+  | "github"
+  | "jira"
+  | "figma"
+  | "linear"
+  | "linkedin"
+  | "zoom"
+  | "slack"
+  | "gmail";
 
 export function IntegrationCard({
   provider,
@@ -14,6 +22,7 @@ export function IntegrationCard({
   description,
   logo,
   logoBg,
+  logoUrl,
   connected,
   pending,
 }: {
@@ -22,6 +31,7 @@ export function IntegrationCard({
   description: string;
   logo: string;
   logoBg: string;
+  logoUrl?: string | null;
   connected: boolean;
   pending: boolean;
 }) {
@@ -74,10 +84,15 @@ export function IntegrationCard({
   return (
     <div className="bg-bone-2 border border-mist rounded-[10px] p-[18px] flex flex-col gap-3 min-h-[168px]">
       <div
-        className="w-9 h-9 rounded-[8px] grid place-content-center font-mono font-semibold text-[14px] text-white"
-        style={{ background: logoBg }}
+        className="w-9 h-9 rounded-[8px] grid place-content-center font-mono font-semibold text-[14px] overflow-hidden border"
+        style={{ borderColor: logoBg, color: logoBg }}
       >
-        {logo}
+        {logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={logoUrl} alt={`${label} logo`} className="w-5 h-5 object-contain" />
+        ) : (
+          logo
+        )}
       </div>
       <div>
         <div className="text-[14px] font-semibold text-ink mb-[3px]">{label}</div>

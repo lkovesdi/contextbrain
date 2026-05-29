@@ -1,4 +1,4 @@
-# MeetingBrain — production rollout
+# ContextBrain — production rollout
 
 The web app and the desktop app share one cloud backend. The desktop client (Tauri, later phases) doesn't carry any secrets; it talks to the same Vercel-hosted Next.js app that the browser talks to, just with a native shell wrapped around it.
 
@@ -18,7 +18,7 @@ The repo has zero commits as of writing — nothing to deploy from. Make an init
 # from the project root
 git add .
 git status      # look for anything that shouldn't be tracked
-git commit -m "Initial commit: MeetingBrain v1 scaffold"
+git commit -m "Initial commit: ContextBrain v1 scaffold"
 git push -u origin main
 ```
 
@@ -28,16 +28,16 @@ git push -u origin main
 
 Two separate Supabase projects: keep the existing `nopzhjevenszabzkgdkl` (us-east-2) as **development**, create a new one for production.
 
-1. supabase.com → New Project. Name it something like `meetingbrain-prod`. Pick the same region as your Vercel deployment (or `us-east-1` if you're unsure).
+1. supabase.com → New Project. Name it something like `contextbrain-prod`. Pick the same region as your Vercel deployment (or `us-east-1` if you're unsure).
 2. Open SQL Editor and run both files in order:
    - `supabase/migrations/0001_init.sql`
    - `supabase/migrations/0002_set_match_function_search_path.sql`
    - Plus any additional migrations that have landed since.
 3. **Auth → URL Configuration** → add to **Redirect URLs**:
-   - `https://meetingbrain.app/auth/callback` (or your real domain)
-   - `https://meetingbrain.app/api/integrations/callback`
-   - `meetingbrain://auth/callback` (later, for the desktop deep link — fine to add now)
-   - `meetingbrain://api/integrations/callback`
+   - `https://contextbrain.app/auth/callback` (or your real domain)
+   - `https://contextbrain.app/api/integrations/callback`
+   - `contextbrain://auth/callback` (later, for the desktop deep link — fine to add now)
+   - `contextbrain://api/integrations/callback`
 4. **Auth → Email** → confirm the magic-link template; customize the sender name / subject before public launch.
 5. **Settings → API Keys** → grab the **Publishable** + **Secret** keys for the next step.
 
@@ -66,17 +66,17 @@ Acceptance: 8 tables visible under Table Editor with RLS enabled; 3 `match_*` fu
 
    Mark them available to **Production**, **Preview**, and **Development** as appropriate. Secret keys should never appear in `NEXT_PUBLIC_` vars.
 
-5. **Domains** → add your custom domain (e.g. `meetingbrain.app`). DNS: a `CNAME` on `@` to `cname.vercel-dns.com` (or `A` records depending on your registrar's apex support). Vercel will issue a Let's Encrypt cert automatically.
+5. **Domains** → add your custom domain (e.g. `contextbrain.app`). DNS: a `CNAME` on `@` to `cname.vercel-dns.com` (or `A` records depending on your registrar's apex support). Vercel will issue a Let's Encrypt cert automatically.
 
 6. Trigger a deploy. The first build will exercise the full pipeline against real production env vars.
 
-Acceptance: `https://meetingbrain.app/login` loads, magic-link sign-in works end to end, creating a meeting and recording produces real transcripts and a real summary.
+Acceptance: `https://contextbrain.app/login` loads, magic-link sign-in works end to end, creating a meeting and recording produces real transcripts and a real summary.
 
 ### 4. Composio production wiring
 
 Each provider's OAuth app needs the production callback added.
 
-- GitHub OAuth App settings → **Authorization callback URL** → add `https://meetingbrain.app/api/integrations/callback`.
+- GitHub OAuth App settings → **Authorization callback URL** → add `https://contextbrain.app/api/integrations/callback`.
 - Jira OAuth → same.
 - Figma OAuth → same.
 
@@ -103,7 +103,7 @@ I've left these out of the v1 scaffold so the dependency tree stays minimal. Whe
 
 ### 7. Domain + email
 
-If MeetingBrain will send email beyond Supabase's magic-link sender, set up:
+If ContextBrain will send email beyond Supabase's magic-link sender, set up:
 
 - SPF + DKIM + DMARC on the sending domain.
 - (Future) Resend / Postmark / SES for transactional mail when we add reminders or summary emails.

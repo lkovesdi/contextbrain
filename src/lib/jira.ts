@@ -1,4 +1,9 @@
 import { executeTool } from "./composio";
+import type {
+  CreateIssueInput,
+  CreatedIssue,
+  TicketType,
+} from "./tickets";
 
 export type JiraProject = {
   id: string;
@@ -85,4 +90,55 @@ function toIssue(raw: Record<string, unknown>): JiraIssue | null {
       ((fields.status as { name?: string } | undefined)?.name as string) ?? null,
     url: typeof raw.self === "string" ? (raw.self as string) : null,
   };
+}
+
+// ----- Create --------------------------------------------------------------
+
+// Jira issue types are workflow-defined per project. We map our generic
+// vocabulary to the canonical names Atlassian ships in default workflows;
+// teams with custom schemes may need to override these later.
+const JIRA_ISSUE_TYPE: Record<TicketType, string> = {
+  story: "Story",
+  task: "Task",
+  bug: "Bug",
+  epic: "Epic",
+};
+
+const JIRA_PRIORITY: Record<NonNullable<CreateIssueInput["priority"]>, string> = {
+  urgent: "Highest",
+  high: "High",
+  medium: "Medium",
+  low: "Low",
+  none: "Lowest",
+};
+
+export async function createIssue(
+  userId: string,
+  input: CreateIssueInput & { projectKey: string }
+): Promise<CreatedIssue> {
+  const fields: Record<string, unknown> = {
+    project: { key: input.projectKey },
+    summary: input.title,
+    description: input.description,
+    issuetype: { name: JIRA_ISSUE_TYPE[input.type] },
+  };
+  if (input.priority && input.priority !== "none") {
+    fields.priority = { name: JIRA_PRIORITY[input.priority] };
+  }
+  const res = await executeTool("JIRA_CREATE_ISSUE", {
+    userId,
+    arguments: { fields },
+  });
+  const data = unwrap(res) as Record<string, unknown> | null;
+  if (!data) throw new Error("Jira create returned no data");
+  const key = String(data.key ?? "");
+  if (!key) throw new Error("Jira create returned no issue key");
+  // Atlassian's REST response is `{id, key, self}`. `self` is the API URL;
+  // the browser URL is `https://<site>/browse/<KEY>`. The site host isn't
+  // in the response, so we leave url null when we can't infer it.
+  const self = typeof data.self === "string" ? data.self : null;
+  const browseUrl = self?.match(/^(https?:\/\/[^/]+)/)?.[1]
+    ? `${self.match(/^(https?:\/\/[^/]+)/)?.[1]}/browse/${key}`
+    : null;
+  return { provider: "jira", key, url: browseUrl };
 }

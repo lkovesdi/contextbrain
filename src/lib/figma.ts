@@ -277,8 +277,56 @@ export async function getFileContentForIndexing(
   }
 
   const frames: FigmaFrameContent[] = [];
-  for (const root of roots) walkForFrames(root, [], frames);
+  for (const root of roots) {
+    const before = frames.length;
+    walkForFrames(root, [], frames);
+    // No FRAME-typed descendants under this root — happens when the user
+    // pointed at a leaf shape (RECTANGLE, ELLIPSE, etc.) or a page that
+    // only contains shapes. Synthesize a stub so the chip still indexes,
+    // and so the chat route can stamp a screenshot URL onto the chunk
+    // (any chunk with file_key + node_id gets a screenshot_url).
+    if (frames.length === before) {
+      const stub = synthesizeStubFrame(root);
+      if (stub) frames.push(stub);
+    }
+  }
+
+  // Last resort: the API returned something we couldn't walk at all
+  // (unfamiliar response shape, or an empty scoped query). Fall back to a
+  // file-level entry keyed on the scoped node or the document root so the
+  // screenshot endpoint still has coordinates to render.
+  if (frames.length === 0) {
+    frames.push({
+      path: fileName,
+      content: `Figma file: ${fileName}`,
+      nodeId: scopedNodeId ?? "0:0",
+      nodeName: fileName,
+    });
+  }
+
   return { fileName, frames };
+}
+
+// Builds a single frame entry from a root node when walkForFrames couldn't
+// find any FRAME-typed descendants. Uses whatever text + names live under
+// the node — at minimum the node's own name — so the embedding has *some*
+// signal and the chunk carries the node_id needed for screenshot rendering.
+function synthesizeStubFrame(root: unknown): FigmaFrameContent | null {
+  if (!root || typeof root !== "object") return null;
+  const r = root as Record<string, unknown>;
+  const nodeId = String(r.id ?? "");
+  if (!nodeId) return null;
+  const name = String(r.name ?? "") || nodeId;
+  const type = String(r.type ?? "") || "NODE";
+  const text = collectText(r).trim();
+  const lines = [`Figma ${type.toLowerCase()}: ${name}`];
+  if (text && text !== name) lines.push(text);
+  return {
+    path: name,
+    content: lines.join("\n"),
+    nodeId,
+    nodeName: name,
+  };
 }
 
 const FRAME_TYPES = new Set(["FRAME", "COMPONENT", "COMPONENT_SET", "INSTANCE"]);

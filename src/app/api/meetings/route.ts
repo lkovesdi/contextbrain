@@ -1,12 +1,36 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { loadMeetings, MEETINGS_PAGE_SIZE } from "@/lib/meetings";
 
 const Body = z.object({
   title: z.string().optional(),
   context_preset_id: z.string().uuid().nullable().optional(),
   space_id: z.string().uuid().nullable().optional(),
 });
+
+// Paged meetings list. `?q=` runs a trigram fuzzy search (single ranked page);
+// otherwise `?cursor=` keyset-paginates the browse list.
+export async function GET(req: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const { searchParams } = new URL(req.url);
+  const limitParam = Number(searchParams.get("limit"));
+  const limit =
+    Number.isFinite(limitParam) && limitParam > 0
+      ? Math.min(Math.floor(limitParam), 50)
+      : MEETINGS_PAGE_SIZE;
+  const { items, nextCursor } = await loadMeetings(supabase, user.id, {
+    q: searchParams.get("q"),
+    cursor: searchParams.get("cursor"),
+    limit,
+  });
+  return NextResponse.json({ items, nextCursor });
+}
 
 export async function POST(req: Request) {
   const supabase = await createClient();

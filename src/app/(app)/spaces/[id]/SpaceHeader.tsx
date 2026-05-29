@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { Select } from "@/components/ui/Select";
 
 type Space = {
   id: string;
@@ -72,25 +73,22 @@ export function SpaceHeader({ space, presets }: { space: Space; presets: Preset[
         ].join(" ")}
       />
 
-      <label className="flex items-center gap-2 text-[12px] text-ink-2">
+      <div className="flex items-center gap-2 text-[12px] text-ink-2">
         <span>Default preset:</span>
-        <select
+        <Select
+          size="sm"
+          aria-label="Default preset"
           value={presetId}
-          onChange={(e) => {
-            const v = e.target.value;
+          onChange={(v) => {
             setPresetId(v);
             patch({ default_preset_id: v || null });
           }}
-          className="rounded-[6px] bg-bone-2 border border-mist px-2 py-[5px] text-[12.5px] text-ink outline-none appearance-none"
-        >
-          <option value="">— None —</option>
-          {presets.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-      </label>
+          options={[
+            { value: "", label: "— None —" },
+            ...presets.map((p) => ({ value: p.id, label: p.name })),
+          ]}
+        />
+      </div>
     </div>
   );
 }

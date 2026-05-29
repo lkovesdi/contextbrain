@@ -11,6 +11,9 @@ export type ContextSelection = {
   external_context_ids?: string[];
   note_ids?: string[];
   space_id?: string | null;
+  // Co-tagged continuity: prior summaries from meetings sharing any of these
+  // tags get pulled forward, the same way `space_id` pulls a folder's history.
+  tag_ids?: string[];
   recent_summary_count?: number;
   integrations?: { provider: Provider }[];
 };
@@ -78,16 +81,21 @@ export async function retrieve(
     );
   }
 
+  // Prior summaries pulled forward for continuity (space folder + shared tags).
+  // Tracked across both pulls so a meeting that's both in the space and
+  // co-tagged isn't pushed twice.
+  const seenSummaryMeetings = new Set<string>();
+  const recentCount = Math.min(
+    Math.max(selection.recent_summary_count ?? 3, 1),
+    20
+  );
+
   // Recent space summaries — recurring meeting continuity, always included.
   if (selection.space_id) {
-    const matchCount = Math.min(
-      Math.max(selection.recent_summary_count ?? 3, 1),
-      20
-    );
     const { data } = await supabase.rpc("recent_space_summaries", {
       space_id_filter: selection.space_id,
       user_id_filter: user.id,
-      match_count: matchCount,
+      match_count: recentCount,
       exclude_meeting: selection.meeting_id ?? null,
     });
     (data ?? []).forEach(
@@ -98,6 +106,7 @@ export async function retrieve(
         summary: string;
         ended_at: string | null;
       }) => {
+        seenSummaryMeetings.add(r.meeting_id);
         const headline = r.summary_title?.trim() || r.title;
         const date = r.ended_at ? new Date(r.ended_at).toLocaleDateString() : "";
         priority.push({
@@ -109,25 +118,79 @@ export async function retrieve(
     );
   }
 
+  // Recent summaries from co-tagged meetings — topic continuity across spaces.
+  if (selection.tag_ids?.length) {
+    const { data } = await supabase.rpc("recent_tagged_summaries", {
+      tag_ids: selection.tag_ids,
+      user_id_filter: user.id,
+      match_count: recentCount,
+      exclude_meeting: selection.meeting_id ?? null,
+    });
+    (data ?? []).forEach(
+      (r: {
+        meeting_id: string;
+        title: string;
+        summary_title: string | null;
+        summary: string;
+        ended_at: string | null;
+      }) => {
+        if (seenSummaryMeetings.has(r.meeting_id)) return;
+        seenSummaryMeetings.add(r.meeting_id);
+        const headline = r.summary_title?.trim() || r.title;
+        const date = r.ended_at ? new Date(r.ended_at).toLocaleDateString() : "";
+        priority.push({
+          content: `# ${headline}${date ? ` (${date})` : ""}\n\n${r.summary}`,
+          source: `tagged meeting summary`,
+          score: 1,
+        });
+      }
+    );
+  }
+
   if (selection.external_context_ids?.length) {
+    const ids = selection.external_context_ids;
+    // Per-source top-1 → priority. Without this, a small chip (e.g. a 1-chunk
+    // Figma stub) loses every slot to a large chip (e.g. a 268-chunk repo) on
+    // similarity competition. Explicit user picks should always contribute.
+    // Remaining slots come from the cross-source top-k so the richer source
+    // can still dominate when it genuinely is more relevant.
+    const perSource = await Promise.all(
+      ids.map((id) =>
+        supabase.rpc("match_external_chunks", {
+          query_embedding: qVec,
+          match_count: 1,
+          user_id_filter: user.id,
+          context_ids: [id],
+        })
+      )
+    );
+    const seen = new Set<string>();
+    for (const { data } of perSource) {
+      const row = (data ?? [])[0] as ExternalChunkRow | undefined;
+      if (!row) continue;
+      seen.add(row.id);
+      priority.push({
+        content: row.content,
+        source: externalLabel(row.metadata),
+        score: row.similarity,
+        metadata: row.metadata ?? undefined,
+      });
+    }
     const { data } = await supabase.rpc("match_external_chunks", {
       query_embedding: qVec,
       match_count: k,
       user_id_filter: user.id,
-      context_ids: selection.external_context_ids,
+      context_ids: ids,
     });
-    (data ?? []).forEach((r: {
-      content: string;
-      metadata: Record<string, unknown> | null;
-      similarity: number;
-    }) =>
+    (data ?? []).forEach((r: ExternalChunkRow) => {
+      if (seen.has(r.id)) return;
       ambient.push({
         content: r.content,
-        source: `external (${r.metadata?.conversation_name ?? "claude export"})`,
+        source: externalLabel(r.metadata),
         score: r.similarity,
         metadata: r.metadata ?? undefined,
-      })
-    );
+      });
+    });
   }
 
   if (selection.integrations?.length) {
@@ -149,4 +212,28 @@ export async function retrieve(
   const ambientSorted = ambient.sort((a, b) => b.score - a.score);
   const remaining = Math.max(k - priority.length, 0);
   return [...priority, ...ambientSorted.slice(0, remaining)];
+}
+
+type ExternalChunkRow = {
+  id: string;
+  content: string;
+  metadata: Record<string, unknown> | null;
+  similarity: number;
+};
+
+// Build a human-readable label from chunk metadata. The indexer stamps
+// `repo` (e.g. "lkovesdi/contextbrain", "figma:Untitled", "jira:CB") and
+// `path` onto every chunk — fall back to source_type only if those got lost.
+function externalLabel(
+  metadata: Record<string, unknown> | null | undefined
+): string {
+  const meta = metadata ?? {};
+  const repo = typeof meta.repo === "string" ? meta.repo : null;
+  const path = typeof meta.path === "string" ? meta.path : null;
+  const sourceType =
+    typeof meta.source_type === "string" ? meta.source_type : null;
+  if (repo && path) return `${repo} / ${path}`;
+  if (repo) return repo;
+  if (sourceType) return sourceType;
+  return "external";
 }

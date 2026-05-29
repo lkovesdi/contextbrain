@@ -7,20 +7,22 @@ type Props = {
   onChange: (v: boolean) => void;
   children: React.ReactNode;
   dim?: boolean;
+  disabled?: boolean;
 };
 
-export function Checkbox({ checked, onChange, children, dim = false }: Props) {
+export function Checkbox({ checked, onChange, children, dim = false, disabled = false }: Props) {
   return (
     <label
       className={[
-        "flex items-center gap-[9px] cursor-pointer text-[13.5px]",
+        "flex items-center gap-[9px] text-[13.5px]",
+        disabled ? "opacity-50 cursor-not-allowed" : "cursor-pointer",
         dim ? "text-slate" : "text-ink-2",
       ].join(" ")}
     >
       <span
         onClick={(e) => {
           e.preventDefault();
-          onChange(!checked);
+          if (!disabled) onChange(!checked);
         }}
         className={[
           "w-[15px] h-[15px] rounded-[4px] flex-shrink-0 grid place-content-center",
@@ -46,7 +48,10 @@ export function Checkbox({ checked, onChange, children, dim = false }: Props) {
       <input
         type="checkbox"
         checked={checked}
-        onChange={() => onChange(!checked)}
+        disabled={disabled}
+        onChange={() => {
+          if (!disabled) onChange(!checked);
+        }}
         className="hidden"
       />
       <span>{children}</span>

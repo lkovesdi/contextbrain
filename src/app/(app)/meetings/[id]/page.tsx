@@ -10,7 +10,9 @@ import { SpacePicker } from "./SpacePicker";
 import { Eyebrow } from "@/components/ui/typography";
 import { SummarySection } from "./SummarySection";
 import { SummaryPreview } from "./SummaryPreview";
+import { MeetingTags } from "./MeetingTags";
 import type { ChipData } from "@/components/context/ContextChip";
+import type { Tag } from "@/lib/tags";
 
 export const dynamic = "force-dynamic";
 
@@ -43,7 +45,13 @@ export default async function MeetingPage({
   const showPreview = !!meeting.summary && !!meeting.ended_at && !wantsContinue;
 
   if (showPreview) {
-    const [{ data: notesForCount }, presetRow] = await Promise.all([
+    const [
+      { data: notesForCount },
+      presetRow,
+      { data: ticketsForPreview },
+      { data: previewIntegrations },
+      { data: previewTagRows },
+    ] = await Promise.all([
       supabase
         .from("notes")
         .select("id", { count: "exact", head: false })
@@ -55,7 +63,24 @@ export default async function MeetingPage({
             .eq("id", meeting.context_preset_id)
             .single()
         : Promise.resolve({ data: null as { name: string } | null }),
+      supabase
+        .from("meeting_tickets")
+        .select("id,provider,external_key,external_url,title,suggestion_title")
+        .eq("meeting_id", id)
+        .order("created_at", { ascending: false }),
+      supabase.from("integrations").select("provider"),
+      supabase
+        .from("meeting_tags")
+        .select("tag:tags(id,label_key,value)")
+        .eq("meeting_id", id)
+        .order("created_at", { ascending: true }),
     ]);
+    const previewTags = ((previewTagRows ?? []) as unknown as { tag: Tag | null }[])
+      .map((r) => r.tag)
+      .filter((t): t is Tag => !!t);
+    const ticketProviders = ((previewIntegrations ?? []) as { provider: string }[])
+      .map((i) => i.provider)
+      .filter((p): p is "jira" | "linear" => p === "jira" || p === "linear");
     return (
       <SummaryPreview
         meetingId={meeting.id}
@@ -66,6 +91,10 @@ export default async function MeetingPage({
         endedAt={meeting.ended_at ?? null}
         noteCount={(notesForCount ?? []).length}
         presetName={presetRow?.data?.name ?? null}
+        summaryExtras={meeting.summary_extras ?? {}}
+        createdTickets={ticketsForPreview ?? []}
+        ticketProviders={ticketProviders}
+        tags={previewTags}
       />
     );
   }
@@ -77,6 +106,8 @@ export default async function MeetingPage({
     { data: integrations },
     { data: spaces },
     presetRow,
+    { data: createdTickets },
+    { data: tagRows },
   ] = await Promise.all([
     supabase
       .from("transcripts")
@@ -103,11 +134,27 @@ export default async function MeetingPage({
           .eq("id", meeting.context_preset_id)
           .single()
       : Promise.resolve({ data: null }),
+    supabase
+      .from("meeting_tickets")
+      .select("id,provider,external_key,external_url,title,suggestion_title")
+      .eq("meeting_id", id)
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("meeting_tags")
+      .select("tag:tags(id,label_key,value)")
+      .eq("meeting_id", id)
+      .order("created_at", { ascending: true }),
   ]);
 
   const presetSources = presetRow?.data?.sources ?? null;
   const presetName = presetRow?.data?.name ?? null;
   const integrationProviders = (integrations ?? []).map((i) => i.provider);
+  const ticketProviders = integrationProviders.filter(
+    (p): p is "jira" | "linear" => p === "jira" || p === "linear"
+  );
+  const meetingTags = ((tagRows ?? []) as unknown as { tag: Tag | null }[])
+    .map((r) => r.tag)
+    .filter((t): t is Tag => !!t);
   const live = !meeting.ended_at;
 
   return (
@@ -115,7 +162,7 @@ export default async function MeetingPage({
       <header className="flex items-center justify-between gap-[14px] px-[22px] py-[14px] border-b border-mist bg-bone-2">
         <div className="flex items-center gap-[14px] min-w-0 overflow-hidden">
           <Link
-            href="/"
+            href="/meetings"
             className="flex items-center gap-1 font-mono text-[11px] uppercase tracking-[0.07em] text-slate hover:text-ink transition-colors flex-shrink-0"
           >
             <ChevronLeft size={12} strokeWidth={1.6} />
@@ -147,15 +194,29 @@ export default async function MeetingPage({
         </div>
       </header>
 
+      <div className="flex items-center gap-[10px] px-[22px] py-[8px] border-b border-mist bg-bone-2">
+        <Eyebrow className="flex-shrink-0">Tags</Eyebrow>
+        <MeetingTags meetingId={meeting.id} initialTags={meetingTags} />
+      </div>
+
       <div className="grid flex-1 min-h-0 grid-cols-1 lg:grid-cols-[1.15fr_1fr_1.2fr]">
         <section className="min-h-0 overflow-y-auto border-b border-mist lg:border-b-0 lg:border-r p-[22px]">
           <Eyebrow className="mb-[14px]">Recorder</Eyebrow>
-          <Recorder meetingId={meeting.id} initialLines={transcripts ?? []} />
+          <Recorder
+            meetingId={meeting.id}
+            initialLines={transcripts ?? []}
+            initialSpeakerNames={
+              (meeting.speaker_names ?? {}) as Record<string, string>
+            }
+          />
           {meeting.summary && (
             <SummarySection
               meetingId={meeting.id}
               initialTitle={meeting.summary_title ?? null}
               initialSummary={meeting.summary}
+              initialExtras={meeting.summary_extras ?? {}}
+              initialCreatedTickets={createdTickets ?? []}
+              integrations={ticketProviders}
             />
           )}
         </section>
@@ -174,6 +235,7 @@ export default async function MeetingPage({
             githubConnected={integrationProviders.includes("github")}
             presetSources={presetSources}
             presetName={presetName}
+            tags={meetingTags}
             initialPinnedImages={
               (meeting.pinned_summary_images ?? []) as {
                 url: string;

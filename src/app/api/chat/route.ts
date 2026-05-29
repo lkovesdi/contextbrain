@@ -20,9 +20,23 @@ const Body = z.object({
       external_context_ids: z.array(z.string().uuid()).optional(),
       note_ids: z.array(z.string().uuid()).optional(),
       space_id: z.string().uuid().nullable().optional(),
+      tag_ids: z.array(z.string().uuid()).optional(),
       recent_summary_count: z.number().int().min(1).max(20).optional(),
       integrations: z
-        .array(z.object({ provider: z.enum(["github", "jira", "figma", "linear"]) }))
+        .array(
+          z.object({
+            provider: z.enum([
+              "github",
+              "jira",
+              "figma",
+              "linear",
+              "linkedin",
+              "zoom",
+              "slack",
+              "gmail",
+            ]),
+          })
+        )
         .optional(),
     })
     .default({}),
@@ -96,9 +110,15 @@ export async function POST(req: Request) {
         .join("\n\n")}\n</retrieved_context>`
     : "";
 
-  const system = `You are MeetingBrain, an assistant for the user's meetings and notes. Use the retrieved context below to answer. Cite sources by bracket number when relevant. If the context doesn't cover the question, say so plainly.
+  const system = `You are ContextBrain, an assistant for a technical user's meetings and notes. Be direct, use precise terminology (software, product, engineering), and don't hedge.
 
-When a retrieved chunk includes a \`screenshot_url:\`, you may show the image inline by writing markdown image syntax: \`![<short alt>](<url>)\`. Do this when the user asks to *see*, *show*, *look at*, or otherwise visual things. Don't invent URLs — only use ones present in the retrieved context.${contextBlock}`;
+Two sources of knowledge, used differently:
+- **Retrieved context** below is authoritative for anything user-specific: their meetings, notes, decisions, people, projects, integrations. When you draw on it, cite with bracket numbers like [1], [2].
+- **Your own knowledge** covers everything else: software concepts, frameworks, APIs, protocols, industry conventions, general world knowledge. Use it freely. Don't refuse or hedge just because retrieval came up thin — retrieval is for *their* data; your training is for everything else.
+
+Never write meta-commentary like "based on the retrieved context," "the context doesn't cover this," or "from what's available." Just answer. If a question genuinely requires user-specific info you don't have and retrieval missed it, say so in one short sentence and move on — don't pad the answer with apologies.
+
+When a retrieved chunk includes a \`screenshot_url:\`, show the image inline with markdown: \`![<short alt>](<url>)\`. Do this when the user asks to *see*, *show*, or *look at* something. Don't invent URLs — only use ones present in retrieved context.${contextBlock}`;
 
   // Persist the user message + which sources we retrieved (don't block on it)
   if (meeting_id && lastUserMsg.trim()) {
@@ -111,8 +131,17 @@ When a retrieved chunk includes a \`screenshot_url:\`, you may show the image in
     });
   }
 
+  // Opus for sharp reasoning on short turns; Sonnet once context is heavy
+  // enough that the 5x cost premium stops paying for itself. ~4 chars/token.
+  const approxTokens = Math.ceil(
+    (system.length +
+      cleanMessages.reduce((sum, m) => sum + m.content.length, 0)) /
+      4
+  );
+  const modelId = approxTokens > 30_000 ? "claude-sonnet-4-6" : "claude-opus-4-7";
+
   const result = streamText({
-    model: anthropic("claude-sonnet-4-6"),
+    model: anthropic(modelId),
     system,
     messages: cleanMessages,
     onFinish: async ({ text }) => {

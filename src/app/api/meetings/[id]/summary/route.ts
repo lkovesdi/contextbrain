@@ -7,6 +7,101 @@ import { z } from "zod";
 
 export const maxDuration = 120;
 
+type PriorSummary = {
+  meeting_id: string;
+  title: string;
+  summary_title: string | null;
+  summary: string;
+  ended_at: string | null;
+};
+
+const TicketType = z.enum(["story", "task", "bug", "epic"]);
+const TicketPriority = z.enum(["urgent", "high", "medium", "low", "none"]);
+
+const SuggestedTicket = z.object({
+  title: z
+    .string()
+    .min(4)
+    .max(160)
+    .describe("Imperative title in the voice of the team (e.g. 'Backfill embeddings for old transcripts')."),
+  description: z
+    .string()
+    .min(8)
+    .describe(
+      "1-3 sentences of context from the meeting: what, why, and any constraints. No fluff."
+    ),
+  type: TicketType.describe(
+    "story = user-facing capability, task = engineering chore, bug = defect, epic = umbrella spanning multiple tickets."
+  ),
+  priority: TicketPriority.describe(
+    "Map from the meeting's tone — urgent only if explicitly stated; default 'medium'."
+  ),
+  suggested_owner: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Person named as owner in the meeting, or null if unassigned."),
+});
+
+const Decision = z.object({
+  text: z.string().min(4).describe("The decision itself, stated as a complete sentence."),
+  owner: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Who's accountable, if named."),
+});
+
+const OpenQuestion = z.object({
+  text: z.string().min(4).describe("The unresolved question, phrased as a question."),
+  raised_by: z
+    .string()
+    .nullable()
+    .optional()
+    .describe("Who raised it, if identifiable."),
+});
+
+const Tangent = z.object({
+  topic: z.string().min(2).describe("Short label for the side topic."),
+  note: z
+    .string()
+    .min(4)
+    .describe("One-line summary of what was said and why it was set aside."),
+});
+
+const GithubRefKind = z.enum(["pr", "issue", "commit", "branch"]);
+const GithubRef = z.object({
+  kind: GithubRefKind.describe(
+    "pr = pull request, issue = GitHub issue, commit = SHA, branch = branch name."
+  ),
+  identifier: z
+    .string()
+    .min(1)
+    .describe(
+      "The exact identifier: PR/issue number (no '#'), short or full commit SHA, or branch name."
+    ),
+  repo_hint: z
+    .string()
+    .nullable()
+    .optional()
+    .describe(
+      "If the meeting names a specific repo (e.g. 'in the auth repo' or 'owner/repo'), put that here. Null otherwise."
+    ),
+  context: z
+    .string()
+    .min(4)
+    .max(200)
+    .describe("One-sentence snippet from the meeting explaining what this ref is about."),
+});
+
+const SummaryExtras = z.object({
+  decisions: z.array(Decision).default([]),
+  open_questions: z.array(OpenQuestion).default([]),
+  tangents: z.array(Tangent).default([]),
+  suggested_tickets: z.array(SuggestedTicket).default([]),
+  github_refs: z.array(GithubRef).default([]),
+});
+
 const SummaryOut = z.object({
   title: z
     .string()
@@ -19,11 +114,14 @@ const SummaryOut = z.object({
     .string()
     .min(40)
     .describe(
-      "Full meeting summary as GitHub-flavored markdown. Uses 3-5 H3 sections whose names reflect what actually happened, with hierarchical bullets (parent bullet states the point, sub-bullets give specifics). No top-level H1."
+      "Full meeting summary as GitHub-flavored markdown. Uses 3-5 H3 sections whose names reflect what actually happened, with hierarchical bullets (parent bullet states the point, sub-bullets give specifics). No top-level H1. Do NOT duplicate items that appear in the structured 'decisions', 'open_questions', 'tangents', or 'suggested_tickets' fields — those are rendered separately."
     ),
+  extras: SummaryExtras.describe(
+    "Structured pulls from the meeting. Each list may be empty if the meeting genuinely had none — do not invent items."
+  ),
 });
 
-const SYSTEM_PROMPT = `You write meeting summaries for a tool called MeetingBrain. Your output is the canonical record of the meeting — a careful operator should be able to skim it in 30 seconds and know what happened, what was decided, and what comes next.
+const SYSTEM_PROMPT = `You write meeting summaries for a tool called ContextBrain. Your output is the canonical record of the meeting — a careful operator should be able to skim it in 30 seconds and know what happened, what was decided, and what comes next.
 
 Output format
 - One title that names what the meeting was actually about (project + topic), not generic. Examples of good titles: "Campaign template testing — global templates, sub-orgs, property definitions", "SSO rollout — auth flow and user-type decisions". Examples of bad titles: "Meeting summary", "Team sync", "Discussion".
@@ -32,7 +130,20 @@ Output format
 - Mention people by name when they took an action or made a decision. Don't speculate about owners — if the transcript didn't say, leave it.
 - Preserve specific numbers, dates, error codes, deadlines, and quoted feedback. These are the load-bearing details.
 - The body is plain markdown — no front-matter, no H1.
+- Do NOT add sections titled "Decisions", "Open Questions", "Tangents", or "Tickets" to the markdown body — those are returned as structured \`extras\` and the UI renders them separately. The markdown should narrate the *flow* of the meeting; the extras are the extracted artifacts.
+
+Structured extras (the \`extras\` field)
+- \`decisions\`: things the group concretely committed to. A statement of intent is not a decision; a chosen course of action is. If the meeting didn't make any decisions, return [].
+- \`open_questions\`: things explicitly raised but not answered, OR clear unknowns the group acknowledged. Phrase as a question. If everything got resolved, return [].
+- \`tangents\`: side topics that came up and got parked or rabbit-holed — useful for the user to revisit. One short label + one-line note. Skip filler small talk.
+- \`suggested_tickets\`: actionable engineering or product work the meeting implied. Each suggestion should map to something a sprint board could accept. Skip "discuss further" or "think about X" — only concrete units of work. Prefer 0-5 high-quality suggestions over a long padded list. If nothing actionable came up, return [].
+- \`github_refs\`: concrete GitHub artifacts that came up in the meeting — pull request or issue numbers ("PR 1234", "#56"), commit SHAs (7+ hex chars in context that makes it clearly a commit), or branch names ("the feature/auth-rework branch"). Skip non-references like Slack channels (#general), hashtags, or generic numbers. If the meeting names a specific repo for the ref, include it in \`repo_hint\`. If nothing concrete was referenced, return [].
+- All five lists may be empty. Do not invent items to fill them out.
 - You may embed Figma frame screenshots inline using markdown image syntax: \`![<short alt>](<screenshot_url>)\`. Use this when a visual reference would meaningfully sharpen a bullet — e.g. a "Design review" section discussing the new onboarding flow. Place the image directly under the bullet that mentions it. Don't invent URLs — only use \`screenshot_url\` values present in \`<related_designs>\`.
+- You may embed a **Mermaid diagram** when the meeting discusses something genuinely diagrammable: a data schema (\`erDiagram\`), a request/response flow (\`sequenceDiagram\`), an architecture or pipeline (\`flowchart LR\`), a state machine (\`stateDiagram-v2\`), or a class structure (\`classDiagram\`). Use a fenced \`\`\`mermaid block — the renderer turns it into an SVG.
+  - Only include a diagram when one would clarify the conversation, not as decoration. If the meeting is non-technical (1:1s, status, planning chats) skip it entirely.
+  - Keep it small (5–12 nodes); diagrams that try to capture every detail end up unreadable.
+  - Place it in the section where the topic comes up, not as a separate "Diagram" section.
 
 Inputs you may receive
 - The transcript (lines tagged by speaker).
@@ -59,7 +170,7 @@ export async function POST(
   const { data: meeting, error: meetingErr } = await supabase
     .from("meetings")
     .select(
-      "id,title,started_at,ended_at,space_id,context_preset_id,pinned_summary_images"
+      "id,title,started_at,ended_at,space_id,context_preset_id,pinned_summary_images,speaker_names"
     )
     .eq("id", meetingId)
     .single();
@@ -67,8 +178,14 @@ export async function POST(
     return NextResponse.json({ error: "Meeting not found" }, { status: 404 });
   }
 
-  const [{ data: transcripts }, { data: notes }, presetRow, spaceRow, priorSummariesRow] =
-    await Promise.all([
+  const [
+    { data: transcripts },
+    { data: notes },
+    presetRow,
+    spaceRow,
+    priorSummariesRow,
+    { data: tagRows },
+  ] = await Promise.all([
       supabase
         .from("transcripts")
         .select("speaker,content,created_at")
@@ -100,12 +217,8 @@ export async function POST(
             match_count: 3,
             exclude_meeting: meetingId,
           })
-        : Promise.resolve({ data: [] as Array<{
-            title: string;
-            summary_title: string | null;
-            summary: string;
-            ended_at: string | null;
-          }> }),
+        : Promise.resolve({ data: [] as PriorSummary[] }),
+      supabase.from("meeting_tags").select("tag_id").eq("meeting_id", meetingId),
     ]);
 
   const transcriptLines = transcripts ?? [];
@@ -118,8 +231,15 @@ export async function POST(
     );
   }
 
+  // Apply the user's per-meeting speaker renames so the summary uses real
+  // names instead of raw diarization labels. Keyed the same way the transcript
+  // UI keys them (null/empty speaker → "Unknown").
+  const speakerNames = (meeting.speaker_names ?? {}) as Record<string, string>;
   const fullTranscript = transcriptLines
-    .map((t) => `${t.speaker ?? "Speaker"}: ${t.content}`)
+    .map((t) => {
+      const label = speakerNames[t.speaker || "Unknown"] ?? t.speaker ?? "Speaker";
+      return `${label}: ${t.content}`;
+    })
     .join("\n");
   const noteBlock = noteLines
     .map((n) => `- ${n.is_checked ? "[x] " : ""}${n.content}`)
@@ -139,12 +259,29 @@ export async function POST(
     meeting.title && meeting.title !== "Untitled meeting" ? meeting.title : null;
   const presetName = presetRow?.data?.name ?? null;
   const space = spaceRow?.data ?? null;
-  const priorSummaries = (priorSummariesRow?.data ?? []) as Array<{
-    title: string;
-    summary_title: string | null;
-    summary: string;
-    ended_at: string | null;
-  }>;
+
+  // Continuity context comes from two places: meetings in the same space, and
+  // meetings sharing any of this meeting's tags. Merge both and dedup by
+  // meeting so a meeting that's both in the space and co-tagged appears once.
+  const spacePrior = (priorSummariesRow?.data ?? []) as PriorSummary[];
+  const tagIds = ((tagRows ?? []) as { tag_id: string }[]).map((r) => r.tag_id);
+  let taggedPrior: PriorSummary[] = [];
+  if (tagIds.length > 0) {
+    const { data } = await supabase.rpc("recent_tagged_summaries", {
+      tag_ids: tagIds,
+      user_id_filter: user.id,
+      match_count: 3,
+      exclude_meeting: meetingId,
+    });
+    taggedPrior = (data ?? []) as PriorSummary[];
+  }
+  const seenPrior = new Set<string>();
+  const priorSummaries: PriorSummary[] = [];
+  for (const s of [...spacePrior, ...taggedPrior]) {
+    if (seenPrior.has(s.meeting_id)) continue;
+    seenPrior.add(s.meeting_id);
+    priorSummaries.push(s);
+  }
 
   const contextParts: string[] = [];
   if (titleHint) contextParts.push(`Working title: ${titleHint}`);
@@ -163,7 +300,7 @@ export async function POST(
       })
       .join("\n\n");
     contextParts.push(
-      `Recent prior meetings in this space (for continuity — do NOT restate, only use to disambiguate names/projects/ongoing threads):\n\n${priorBlock}`
+      `Recent related meetings — same space or shared tags (for continuity — do NOT restate, only use to disambiguate names/projects/ongoing threads):\n\n${priorBlock}`
     );
   }
 
@@ -171,14 +308,23 @@ export async function POST(
   // similarity to the transcript so the summary embeds the *relevant* ones.
   // Only figma_* chips contribute screenshots; other chip types (github/jira/
   // linear) will get image-rendering plumbing later.
-  const relatedDesigns = await fetchRelevantFigmaFrames({
-    supabase,
-    userId: user.id,
-    presetExternalIds:
-      ((presetRow?.data as { sources?: { external_context_ids?: string[] } } | null)
-        ?.sources?.external_context_ids ?? []),
-    queryText: fullTranscript || noteBlock,
-  });
+  const presetExternalIds =
+    ((presetRow?.data as { sources?: { external_context_ids?: string[] } } | null)
+      ?.sources?.external_context_ids ?? []);
+
+  const [relatedDesigns, githubRepos] = await Promise.all([
+    fetchRelevantFigmaFrames({
+      supabase,
+      userId: user.id,
+      presetExternalIds,
+      queryText: fullTranscript || noteBlock,
+    }),
+    fetchPresetGithubRepos({
+      supabase,
+      userId: user.id,
+      presetExternalIds,
+    }),
+  ]);
 
   const designsBlock =
     relatedDesigns.length > 0
@@ -188,6 +334,19 @@ export async function POST(
               `[design ${i + 1}] ${d.label}\n${d.text}\nscreenshot_url: ${d.screenshotUrl}`
           )
           .join("\n\n")}\n</related_designs>\n\n`
+      : "";
+
+  // Tell the model which GitHub repos are wired up to this meeting so it can
+  // produce sensible `repo_hint` values when extracting refs. We don't pass
+  // the model any GitHub content — only the available repo names — to keep
+  // the prompt small.
+  const githubReposBlock =
+    githubRepos.length > 0
+      ? `<github_repos_available>\n${githubRepos
+          .map((r) => `${r.owner}/${r.repo}`)
+          .join(
+            "\n"
+          )}\n\nWhen extracting github_refs and a ref clearly belongs to one of these repos, set repo_hint to "owner/repo". If unclear, leave repo_hint null.\n</github_repos_available>\n\n`
       : "";
 
   // Pinned images = explicit user picks from the chat (right-click → "Use in
@@ -221,7 +380,7 @@ export async function POST(
     ? `<transcript>\n${transcriptForPrompt}\n</transcript>`
     : `<transcript>\n(No live transcript — base the summary on the user's notes.)\n</transcript>`;
 
-  const prompt = `${meetingContextBlock}${pinnedBlock}${designsBlock}${notesBlock}${transcriptBlock}`;
+  const prompt = `${meetingContextBlock}${pinnedBlock}${designsBlock}${githubReposBlock}${notesBlock}${transcriptBlock}`;
 
   let result;
   try {
@@ -239,16 +398,56 @@ export async function POST(
     );
   }
 
-  const { title, markdown } = result.object;
+  const { title, markdown, extras } = result.object;
+
+  // Stamp the candidate repos onto extras so the UI can render clickable
+  // links without re-querying. The model picks `repo_hint` per ref when
+  // possible; otherwise the UI shows a per-ref repo picker.
+  const extrasWithRepos = { ...extras, github_repos: githubRepos };
 
   // Persist the AI title into `summary_title` (never overwrite the
-  // user-editable `title`) and the body into `summary`.
+  // user-editable `title`), the body into `summary`, and the structured
+  // outputs into `summary_extras`. Regenerate replaces all three wholesale;
+  // created tickets live in `meeting_tickets` and are not touched.
   await supabase
     .from("meetings")
-    .update({ summary_title: title, summary: markdown })
+    .update({
+      summary_title: title,
+      summary: markdown,
+      summary_extras: extrasWithRepos,
+    })
     .eq("id", meetingId);
 
-  return NextResponse.json({ title, summary: markdown });
+  return NextResponse.json({ title, summary: markdown, extras: extrasWithRepos });
+}
+
+// ---- GitHub repo resolver (for ref chip links in the summary) ----
+
+async function fetchPresetGithubRepos(args: {
+  supabase: SupabaseLike;
+  userId: string;
+  presetExternalIds: string[];
+}): Promise<{ owner: string; repo: string }[]> {
+  if (args.presetExternalIds.length === 0) return [];
+  const { data } = await args.supabase
+    .from("external_contexts")
+    .select("metadata")
+    .in("id", args.presetExternalIds)
+    .eq("user_id", args.userId)
+    .like("source_type", "github_%");
+  const seen = new Set<string>();
+  const out: { owner: string; repo: string }[] = [];
+  for (const row of (data ?? []) as Array<{ metadata: Record<string, unknown> | null }>) {
+    const md = row.metadata ?? {};
+    const owner = typeof md.owner === "string" ? md.owner : null;
+    const repo = typeof md.repo === "string" ? md.repo : null;
+    if (!owner || !repo) continue;
+    const key = `${owner}/${repo}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ owner, repo });
+  }
+  return out;
 }
 
 // ---- Figma frame retrieval (for inline screenshots in the summary) ----

@@ -8,6 +8,7 @@ const Patch = z.object({
   summary: z.string().optional(),
   summary_title: z.string().nullable().optional(),
   space_id: z.string().uuid().nullable().optional(),
+  speaker_names: z.record(z.string(), z.string()).optional(),
 });
 
 export async function GET(

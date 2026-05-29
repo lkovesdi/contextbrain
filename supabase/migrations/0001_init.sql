@@ -1,4 +1,4 @@
--- MeetingBrain v1 — initial schema (PRD §4)
+-- ContextBrain v1 — initial schema (PRD §4)
 -- Apply via MCP `execute_sql` or paste into Supabase SQL Editor.
 
 -- Extensions
