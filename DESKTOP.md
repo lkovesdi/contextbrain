@@ -118,6 +118,24 @@ base64 -i cert.p12 | pbcopy   # paste into the APPLE_CERTIFICATE secret
 security find-identity -p codesigning -v   # shows the exact APPLE_SIGNING_IDENTITY string
 ```
 
+### Required GitHub repo secrets (auto-updater signing)
+
+These are **separate** from the Apple cert — they're Tauri's own minisign keypair, used to sign the update artifact so installed apps only accept updates we produced.
+
+| Secret | What it is |
+| --- | --- |
+| `TAURI_SIGNING_PRIVATE_KEY` | contents of the generated private key file |
+| `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` | the key's password (empty string if generated without one) |
+
+The keypair was generated with `npx tauri signer generate -w ~/.tauri/contextbrain-updater.key`. The **public** half is committed in `tauri.conf.json` (`plugins.updater.pubkey`); the **private** half lives only at `~/.tauri/contextbrain-updater.key` and must never be committed. Upload it to GitHub without it ever touching the clipboard or logs:
+
+```bash
+gh secret set TAURI_SIGNING_PRIVATE_KEY < ~/.tauri/contextbrain-updater.key
+gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD --body ""   # empty: generated without a password
+```
+
+> Back this private key up somewhere safe (a password manager). If it's lost, you cannot ship updates that existing installs will accept — you'd have to re-distribute a fresh download with a new key.
+
 ### Windows
 
 macOS only for now. Windows builds (signing cert, MSI) are deferred — see Phase 5 below.
@@ -144,13 +162,23 @@ The scaffold is intentionally thin — just enough to compile and open a window.
 - **Phase 3 — macOS signing + notarization** adds an Apple Developer ID cert to a GitHub Actions secret, calls `xcrun notarytool submit` in the workflow, staples the result to the `.dmg`.
 - **Phase 4 — Windows audio sidecar** ships a WASAPI loopback capture binary alongside the Swift one, picked by `cfg(target_os)`.
 - **Phase 5 — Windows signing + MSI installer**.
-- **Phase 6 — Auto-update** — flip `bundle.updater.active = true` in `tauri.conf.json`, generate a Tauri signing keypair, host `latest.json` on a GitHub Release.
+- **Phase 6 — Auto-update** — ✅ done. `bundle.createUpdaterArtifacts` is on, the updater pubkey is in `tauri.conf.json`, the release workflow signs the artifact and uploads `latest.json`, and `src-tauri/src/lib.rs` checks for updates on launch (release builds only). See "How auto-update works" below.
 
-Until those phases land, the desktop app is functionally equivalent to opening the web app in Chrome — except deep-link auth and native menus are pre-wired, and the binary is the same shape as the eventual production build.
+Until those phases land, the desktop app is functionally equivalent to opening the web app in Chrome — except deep-link auth, native menus, and auto-update are pre-wired, and the binary is the same shape as the eventual production build.
+
+---
+
+## How auto-update works
+
+1. On launch, release builds spawn a background check (`check_for_updates` in `src-tauri/src/lib.rs`) against the `plugins.updater.endpoints` URL — the `latest.json` asset on the newest GitHub Release.
+2. If `latest.json` advertises a version newer than the running one **and** its signature verifies against the embedded pubkey, the new `.dmg` is downloaded and installed in the background.
+3. On macOS the bundle is swapped in place, so the update applies the **next** time the app is opened — the current session is never interrupted. Check failures (offline, no release yet, bad signature) are logged and ignored.
+
+To ship an update: bump `version` in `tauri.conf.json` (and `src-tauri/Cargo.toml`), tag, push, and publish the resulting draft release. `latest.json` resolves via `/releases/latest/`, so it only goes live once the release is **published** (not while it's a draft).
 
 ---
 
 ## Notes
 
 - The Rust target directory (`src-tauri/target/`) is ~2–3 GB after a first build. It's gitignored. Periodically `cargo clean -p contextbrain` from `src-tauri/` if you're tight on disk.
-- The updater is **disabled by default** in `tauri.conf.json` (`active: false`). Don't flip it on until Phase 6 generates the signing key — releases without a verified signature will reject updates and risk shipping a build that can never be updated again.
+- The updater is **enabled**. Every release must be signed with the same `TAURI_SIGNING_PRIVATE_KEY` — a release built without it (or with a different key) won't be accepted by installed apps. Never rotate the key without re-distributing a fresh download.

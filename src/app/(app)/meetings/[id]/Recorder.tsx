@@ -392,6 +392,9 @@ export function Recorder({
         sample_rate: TARGET_SAMPLE_RATE,
         smart_format: true,
         interim_results: false,
+        // Separate speakers so each line is tagged Speaker 0/1/2 instead of
+        // collapsing into one "Unknown" bucket. Labels are per-session.
+        diarize: true,
       });
       connRef.current = conn;
 
