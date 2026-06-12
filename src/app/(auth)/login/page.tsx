@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { AuthShell } from "../AuthShell";
+import { devSignIn } from "./actions";
 
 export default function LoginPage() {
   const [email, setEmail] = useState("");
@@ -88,6 +89,20 @@ export default function LoginPage() {
           Create an organization
         </Link>
       </p>
+
+      {process.env.NODE_ENV !== "production" && (
+        <form
+          action={devSignIn}
+          className="mt-2 border-t border-white/10 pt-4"
+        >
+          <button
+            type="submit"
+            className="cursor-pointer text-[12px] uppercase tracking-[0.08em] text-mist hover:text-paper"
+          >
+            Dev sign in (skip magic link)
+          </button>
+        </form>
+      )}
     </AuthShell>
   );
 }

@@ -28,13 +28,20 @@ export type RetrievedChunk = {
 export async function retrieve(
   query: string,
   selection: ContextSelection,
-  k = 8
+  k = 8,
+  // Whose context to search. Defaults to the authenticated caller. A guest
+  // chatting in a host's meeting passes the host's id here so retrieval runs
+  // against the host's attached context — the caller must already be verified
+  // as a participant, and the selection must be server-derived (never trust a
+  // guest's client selection, or this becomes a data-exfiltration hole).
+  contextUserId?: string
 ): Promise<RetrievedChunk[]> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) return [];
+  const effectiveUserId = contextUserId ?? user.id;
 
   const qVec = await embed(query);
   // Two buckets: priority (explicit user picks — always included) and
@@ -46,7 +53,7 @@ export async function retrieve(
     const { data } = await supabase.rpc("match_transcripts", {
       query_embedding: qVec,
       match_count: k,
-      user_id_filter: user.id,
+      user_id_filter: effectiveUserId,
       meeting_id_filter: selection.meeting_id,
     });
     (data ?? []).forEach((r: { content: string; speaker: string | null; similarity: number }) =>
@@ -62,7 +69,7 @@ export async function retrieve(
     const { data } = await supabase.rpc("match_notes", {
       query_embedding: qVec,
       match_count: k,
-      user_id_filter: user.id,
+      user_id_filter: effectiveUserId,
     });
     (data ?? []).forEach((r: { content: string; similarity: number }) =>
       ambient.push({ content: r.content, source: "note", score: r.similarity })
@@ -75,7 +82,7 @@ export async function retrieve(
       .from("notes")
       .select("content")
       .in("id", selection.note_ids)
-      .eq("user_id", user.id);
+      .eq("user_id", effectiveUserId);
     (data ?? []).forEach((r: { content: string }) =>
       priority.push({ content: r.content, source: "pinned note", score: 1 })
     );
@@ -94,7 +101,7 @@ export async function retrieve(
   if (selection.space_id) {
     const { data } = await supabase.rpc("recent_space_summaries", {
       space_id_filter: selection.space_id,
-      user_id_filter: user.id,
+      user_id_filter: effectiveUserId,
       match_count: recentCount,
       exclude_meeting: selection.meeting_id ?? null,
     });
@@ -122,7 +129,7 @@ export async function retrieve(
   if (selection.tag_ids?.length) {
     const { data } = await supabase.rpc("recent_tagged_summaries", {
       tag_ids: selection.tag_ids,
-      user_id_filter: user.id,
+      user_id_filter: effectiveUserId,
       match_count: recentCount,
       exclude_meeting: selection.meeting_id ?? null,
     });
@@ -159,7 +166,7 @@ export async function retrieve(
         supabase.rpc("match_external_chunks", {
           query_embedding: qVec,
           match_count: 1,
-          user_id_filter: user.id,
+          user_id_filter: effectiveUserId,
           context_ids: [id],
         })
       )
@@ -179,7 +186,7 @@ export async function retrieve(
     const { data } = await supabase.rpc("match_external_chunks", {
       query_embedding: qVec,
       match_count: k,
-      user_id_filter: user.id,
+      user_id_filter: effectiveUserId,
       context_ids: ids,
     });
     (data ?? []).forEach((r: ExternalChunkRow) => {
@@ -195,7 +202,7 @@ export async function retrieve(
 
   if (selection.integrations?.length) {
     for (const { provider } of selection.integrations) {
-      const res = await fetchIntegrationContext(user.id, provider, query);
+      const res = await fetchIntegrationContext(effectiveUserId, provider, query);
       if (!res) continue;
       const summary = JSON.stringify(res).slice(0, 2000);
       ambient.push({

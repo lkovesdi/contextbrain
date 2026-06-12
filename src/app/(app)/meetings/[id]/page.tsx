@@ -7,6 +7,7 @@ import { Notes } from "./Notes";
 import { ChatPanel } from "./ChatPanel";
 import { MeetingTitle } from "./MeetingTitle";
 import { SpacePicker } from "./SpacePicker";
+import { InviteButton } from "./InviteButton";
 import { Eyebrow } from "@/components/ui/typography";
 import { SummarySection } from "./SummarySection";
 import { SummaryPreview } from "./SummaryPreview";
@@ -181,6 +182,12 @@ export default async function MeetingPage({
             spaces={(spaces ?? []) as { id: string; name: string; icon: string | null }[]}
             initialSpaceId={meeting.space_id ?? null}
           />
+          {live && (
+            <InviteButton
+              meetingId={meeting.id}
+              initialToken={meeting.share_token ?? null}
+            />
+          )}
           {live ? (
             <span className="inline-flex items-center gap-[6px] font-mono text-[11px] uppercase tracking-[0.08em] text-pulse">
               <span className="w-[6px] h-[6px] rounded-full bg-pulse [animation:mb-pulse_1.4s_infinite]" />

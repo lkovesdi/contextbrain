@@ -1,7 +1,8 @@
 import { anthropic } from "@ai-sdk/anthropic";
 import { streamText } from "ai";
-import { retrieve, type RetrievedChunk } from "@/lib/retrieve";
+import { retrieve, type RetrievedChunk, type ContextSelection } from "@/lib/retrieve";
 import { createClient } from "@/lib/supabase/server";
+import type { Provider } from "@/lib/composio";
 import { z } from "zod";
 
 export const maxDuration = 60;
@@ -66,14 +67,73 @@ export async function POST(req: Request) {
   const lastUserMsg =
     [...cleanMessages].reverse().find((m) => m.role === "user")?.content ?? "";
 
+  // Resolve whose context to search. The meeting owner searches their own
+  // (trusting their client selection). A guest of the meeting searches the
+  // *host's* attached context, but with a server-derived selection only — we
+  // never trust a guest's client selection, or they could pull the host's
+  // unrelated notes/contexts.
+  const effectiveMeetingId = meeting_id ?? selection.meeting_id;
+  let contextUserId: string | undefined;
+  let effectiveSelection: ContextSelection = {
+    ...selection,
+    meeting_id: effectiveMeetingId,
+  };
+
+  let diagMeetingOwner: string | null = null;
+  if (effectiveMeetingId) {
+    const { data: meetingRow } = await supabase
+      .from("meetings")
+      .select("user_id")
+      .eq("id", effectiveMeetingId)
+      .single();
+    diagMeetingOwner = meetingRow?.user_id ?? null;
+
+    if (meetingRow && meetingRow.user_id !== user.id) {
+      // Not the owner — authorize as a participant and fetch the host scope in
+      // one SECURITY DEFINER call (returns nothing for non-participants).
+      const { data: scopeRows } = await supabase.rpc("guest_meeting_context", {
+        p_meeting_id: effectiveMeetingId,
+      });
+      const scope = (Array.isArray(scopeRows) ? scopeRows[0] : scopeRows) as
+        | { owner_id: string; external_context_ids: string[] | null; integrations: Record<string, unknown> | null }
+        | undefined;
+      if (!scope) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      contextUserId = scope.owner_id;
+      effectiveSelection = {
+        meeting_id: effectiveMeetingId,
+        include_notes: false,
+        note_ids: [],
+        external_context_ids: scope.external_context_ids ?? [],
+        space_id: null,
+        tag_ids: [],
+        recent_summary_count: 3,
+        integrations: Object.keys(scope.integrations ?? {}).map((provider) => ({
+          provider: provider as Provider,
+        })),
+      };
+    }
+  }
+
   let chunks: RetrievedChunk[] = [];
   if (lastUserMsg.trim()) {
-    chunks = await retrieve(
-      lastUserMsg,
-      { ...selection, meeting_id: meeting_id ?? selection.meeting_id },
-      8
-    );
+    chunks = await retrieve(lastUserMsg, effectiveSelection, 8, contextUserId);
   }
+
+  // TEMP DIAGNOSTIC — remove once guest context is confirmed working.
+  console.error(
+    "[chat-diag] " +
+      JSON.stringify({
+        uid: user.id,
+        isAnonymous: (user as { is_anonymous?: boolean }).is_anonymous ?? null,
+        effectiveMeetingId: effectiveMeetingId ?? null,
+        meetingOwner: diagMeetingOwner,
+        contextUserId: contextUserId ?? null,
+        selMeetingId: effectiveSelection.meeting_id ?? null,
+        chunks: chunks.length,
+      })
+  );
 
   // Figma chunks carry file_key + node_id in their metadata. We surface a
   // ready-to-embed screenshot URL alongside the text so the model can answer

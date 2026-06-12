@@ -14,7 +14,7 @@
       {
         "label": "main",
         "title": "ContextBrain",
-        "url": "https://contextbrain.app",
+        "url": "http://localhost:3000",
         "width": 1280,
         "height": 800,
         "minWidth": 960,
@@ -41,7 +41,8 @@
     ],
     "macOS": {
       "minimumSystemVersion": "13.0",
-      "entitlements": "entitlements.plist"
+      "entitlements": "entitlements.plist",
+      "infoPlist": "Info.plist"
     },
     "windows": {
       "wix": {

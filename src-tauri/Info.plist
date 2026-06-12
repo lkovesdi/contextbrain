@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTD/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+        Merged into Tauri's auto-generated Info.plist at bundle time
+        (bundle.macOS.infoPlist in tauri.conf.json). Keys here override
+        anything Tauri sets; Tauri's defaults (CFBundleIdentifier,
+        CFBundleVersion, etc.) are preserved.
+
+        NSMicrophoneUsageDescription is what macOS shows in the system
+        permission prompt when getUserMedia({ audio }) first runs. Without
+        this key, macOS denies silently and no prompt ever appears.
+    -->
+    <key>NSMicrophoneUsageDescription</key>
+    <string>ContextBrain transcribes your meetings using the microphone.</string>
+</dict>
+</plist>
