@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "./Sidebar";
 import { ConfirmProvider } from "@/components/ui/ConfirmModal";
+import { DesktopAppPrompt } from "@/components/ui/DesktopAppPrompt";
 
 export default async function AppLayout({
   children,
@@ -30,7 +31,10 @@ export default async function AppLayout({
     <ConfirmProvider>
       <div className="flex min-h-screen bg-paper text-ink">
         <Sidebar userEmail={user.email ?? ""} orgName={orgName} />
-        <main className="flex-1 min-w-0 flex flex-col">{children}</main>
+        <main className="flex-1 min-w-0 flex flex-col">
+          <DesktopAppPrompt />
+          {children}
+        </main>
       </div>
     </ConfirmProvider>
   );

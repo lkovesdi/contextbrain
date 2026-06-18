@@ -14,7 +14,7 @@
       {
         "label": "main",
         "title": "ContextBrain",
-        "url": "http://localhost:3000",
+        "url": "https://contextbrain.vercel.app",
         "width": 1280,
         "height": 800,
         "minWidth": 960,
