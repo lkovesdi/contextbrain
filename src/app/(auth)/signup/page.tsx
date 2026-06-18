@@ -8,20 +8,30 @@ import { Input } from "@/components/ui/Input";
 import { AuthShell } from "../AuthShell";
 
 type ExistingOrg = { id: string; name: string; memberCount: number };
+type Status =
+  | "idle"
+  | "checking"
+  | "sending"
+  | "awaiting_code"
+  | "verifying"
+  | "error";
 
 export default function SignupPage() {
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "checking" | "sent" | "error">("idle");
+  const [code, setCode] = useState("");
+  const [status, setStatus] = useState<Status>("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [existingOrg, setExistingOrg] = useState<ExistingOrg | null>(null);
 
-  async function onSubmit(e: React.FormEvent) {
+  // Step 1: validate the domain, then ask Supabase to email a 6-digit OTP. The
+  // code-based flow (no `emailRedirectTo`) avoids the magic-link PKCE failure
+  // in the Tauri WebView.
+  async function start(e: React.FormEvent) {
     e.preventDefault();
     setStatus("checking");
     setErrorMsg(null);
     setExistingOrg(null);
 
-    // 1) Verify it's a real work email (DNS + not a free provider).
     const res = await fetch("/api/org/check-domain", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -34,21 +44,45 @@ export default function SignupPage() {
       return;
     }
 
-    // 2) Send the magic link, routing to onboarding after confirmation.
+    setStatus("sending");
     const supabase = createClient();
-    const next = encodeURIComponent("/onboarding");
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=${next}` },
-    });
+    const { error } = await supabase.auth.signInWithOtp({ email });
     if (error) {
       setErrorMsg(error.message);
       setStatus("error");
       return;
     }
     setExistingOrg(data.existingOrg ?? null);
-    setStatus("sent");
+    setStatus("awaiting_code");
   }
+
+  // Step 2: verify the code; on success, route to onboarding.
+  async function verify(e: React.FormEvent) {
+    e.preventDefault();
+    setStatus("verifying");
+    setErrorMsg(null);
+    const supabase = createClient();
+    const { error } = await supabase.auth.verifyOtp({
+      email,
+      token: code.trim(),
+      type: "email",
+    });
+    if (error) {
+      setErrorMsg(error.message);
+      setStatus("awaiting_code");
+    } else {
+      window.location.href = "/onboarding";
+    }
+  }
+
+  function resetEmail() {
+    setStatus("idle");
+    setCode("");
+    setErrorMsg(null);
+    setExistingOrg(null);
+  }
+
+  const awaitingCode = status === "awaiting_code" || status === "verifying";
 
   return (
     <AuthShell>
@@ -61,11 +95,12 @@ export default function SignupPage() {
         </p>
       </div>
 
-      {status === "sent" ? (
-        <div className="flex flex-col gap-4">
+      {awaitingCode ? (
+        <form onSubmit={verify} className="flex flex-col gap-4">
           <div className="rounded-[8px] border border-echo/40 bg-echo/10 p-4 text-[13px] text-echo-tint">
-            Check <span className="font-medium text-paper">{email}</span> for a confirmation
-            link to continue setting up your workspace.
+            We sent a 6-digit code to{" "}
+            <span className="font-medium text-paper">{email}</span>. Enter it
+            below to continue.
           </div>
           {existingOrg && (
             <div className="rounded-[8px] border border-white/10 bg-white/[0.03] p-4 text-[13px] text-mist">
@@ -77,16 +112,40 @@ export default function SignupPage() {
               . You&apos;ll be able to join your team after confirming.
             </div>
           )}
+          <Input
+            type="text"
+            inputMode="numeric"
+            autoComplete="one-time-code"
+            pattern="[0-9]{6}"
+            maxLength={6}
+            required
+            tone="dark"
+            label="Sign-in code"
+            value={code}
+            onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+            placeholder="123456"
+            autoFocus
+            error={errorMsg ?? undefined}
+          />
+          <Button
+            type="submit"
+            variant="primary"
+            size="lg"
+            disabled={status === "verifying" || code.length !== 6}
+            className="w-full justify-center"
+          >
+            {status === "verifying" ? "Verifying…" : "Continue"}
+          </Button>
           <button
             type="button"
-            onClick={() => setStatus("idle")}
+            onClick={resetEmail}
             className="cursor-pointer self-start text-[13px] text-mist transition-colors hover:text-paper"
           >
             Use a different email
           </button>
-        </div>
+        </form>
       ) : (
-        <form onSubmit={onSubmit} className="flex flex-col gap-4">
+        <form onSubmit={start} className="flex flex-col gap-4">
           <Input
             type="email"
             required
@@ -103,10 +162,18 @@ export default function SignupPage() {
             type="submit"
             variant="primary"
             size="lg"
-            disabled={status === "checking" || email.trim().length === 0}
+            disabled={
+              status === "checking" ||
+              status === "sending" ||
+              email.trim().length === 0
+            }
             className="w-full justify-center"
           >
-            {status === "checking" ? "Checking…" : "Continue"}
+            {status === "checking"
+              ? "Checking…"
+              : status === "sending"
+                ? "Sending…"
+                : "Continue"}
           </Button>
         </form>
       )}

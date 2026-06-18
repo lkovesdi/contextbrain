@@ -1,0 +1,12 @@
+# Vercel only builds the Next.js web app. Exclude everything it doesn't need —
+# notably the multi-GB Tauri/Rust build output and the local Next.js cache.
+# Leading slash = root-only, so we don't accidentally drop src/lib/supabase/.
+/src-tauri
+/.next
+/e2e
+/test-results
+/.design-handoff
+/supabase
+node_modules
+*.zip
+*.tsbuildinfo

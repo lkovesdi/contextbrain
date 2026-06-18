@@ -9,6 +9,7 @@
     "lint": "eslint --max-warnings 0",
     "typecheck": "tsc --noEmit",
     "e2e": "playwright test",
+    "deploy": "vercel --prod",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
