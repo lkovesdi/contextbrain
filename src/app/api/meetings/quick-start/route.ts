@@ -32,5 +32,6 @@ export async function GET(req: Request) {
     return NextResponse.redirect(new URL("/meetings", req.url));
   }
 
-  return NextResponse.redirect(new URL(`/meetings/${data.id}`, req.url));
+  // `?record=1` tells the Recorder to start capturing immediately on arrival.
+  return NextResponse.redirect(new URL(`/meetings/${data.id}?record=1`, req.url));
 }
