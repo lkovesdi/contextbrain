@@ -1,6 +1,3 @@
-// Only the debug-only devtools block needs `Manager` (for `get_webview_window`);
-// the release updater path uses the inherent `App::handle`, so gate the import.
-#[cfg(debug_assertions)]
 use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -21,6 +18,25 @@ pub fn run() {
                 window.open_devtools();
             }
 
+            // macOS: the window uses `titleBarStyle: "Overlay"` (tauri.conf.json),
+            // so web content fills the window under the traffic lights — the
+            // seamless, Granola-style look with no system titlebar. That also
+            // means there's no native titlebar to grab, so install a transparent
+            // native drag strip across the top to keep the window movable. Done
+            // entirely in Rust, so it works regardless of what the (remote) web
+            // frontend loads.
+            #[cfg(target_os = "macos")]
+            if let Some(window) = app.get_webview_window("main") {
+                if let Ok(ns_window) = window.ns_window() {
+                    macos_titlebar::install_drag_strip(ns_window);
+                }
+            }
+
+            // Watch the microphone: when any app starts using it (a call
+            // beginning), pop the "Meeting Detected" prompt. macOS only for now.
+            #[cfg(target_os = "macos")]
+            mic_monitor::start(app.handle().clone());
+
             // Auto-update: on launch, check the GitHub Release endpoint and,
             // if a newer signed build exists, download + install it in the
             // background. On macOS the new bundle is swapped in place and
@@ -39,7 +55,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ping]);
+        .invoke_handler(tauri::generate_handler![ping, start_meeting, dismiss_popup]);
 
     builder
         .run(tauri::generate_context!())
@@ -51,6 +67,228 @@ pub fn run() {
 #[tauri::command]
 fn ping() -> &'static str {
     "pong"
+}
+
+/// Called by the "Meeting Detected" popup's button. The popup can't create a
+/// meeting itself (no session), so we send the main window — which is logged
+/// in — to the quick-start route that creates a meeting and opens it, then
+/// surface the main window and dismiss the popup.
+#[tauri::command]
+fn start_meeting(app: tauri::AppHandle) {
+    if let Some(main) = app.get_webview_window("main") {
+        if let Ok(url) = tauri::Url::parse("https://contextbrain.vercel.app/api/meetings/quick-start")
+        {
+            let _ = main.navigate(url);
+        }
+        let _ = main.unminimize();
+        let _ = main.show();
+        let _ = main.set_focus();
+    }
+    if let Some(popup) = app.get_webview_window("meeting-popup") {
+        let _ = popup.close();
+    }
+}
+
+/// Called by the popup on its 15s timeout (or a manual dismiss) to close itself.
+#[tauri::command]
+fn dismiss_popup(app: tauri::AppHandle) {
+    if let Some(popup) = app.get_webview_window("meeting-popup") {
+        let _ = popup.close();
+    }
+}
+
+// Detects when any app starts using the microphone (i.e. a call beginning) and
+// pops the "Meeting Detected" prompt. Polls CoreAudio's
+// `kAudioDevicePropertyDeviceIsRunningSomewhere` on the default input device —
+// this is below the app layer, so it fires for Zoom, Google Meet, Teams,
+// FaceTime, etc. alike, with no per-platform integration.
+#[cfg(target_os = "macos")]
+mod mic_monitor {
+    use std::os::raw::c_void;
+    use std::time::Duration;
+    use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
+
+    type AudioObjectID = u32;
+    type OSStatus = i32;
+
+    #[repr(C)]
+    struct AudioObjectPropertyAddress {
+        selector: u32,
+        scope: u32,
+        element: u32,
+    }
+
+    const fn fourcc(s: &[u8; 4]) -> u32 {
+        ((s[0] as u32) << 24) | ((s[1] as u32) << 16) | ((s[2] as u32) << 8) | (s[3] as u32)
+    }
+
+    const SYSTEM_OBJECT: AudioObjectID = 1;
+    const DEFAULT_INPUT_DEVICE: u32 = fourcc(b"dIn ");
+    const IS_RUNNING_SOMEWHERE: u32 = fourcc(b"gone");
+    const SCOPE_GLOBAL: u32 = fourcc(b"glob");
+    const ELEMENT_MAIN: u32 = 0;
+
+    #[link(name = "CoreAudio", kind = "framework")]
+    extern "C" {
+        fn AudioObjectGetPropertyData(
+            object_id: AudioObjectID,
+            address: *const AudioObjectPropertyAddress,
+            qualifier_size: u32,
+            qualifier: *const c_void,
+            data_size: *mut u32,
+            data: *mut c_void,
+        ) -> OSStatus;
+    }
+
+    // Reads a single u32 property (global scope, main element) off an audio
+    // object. Returns None on any CoreAudio error.
+    fn get_u32(object: AudioObjectID, selector: u32) -> Option<u32> {
+        let address = AudioObjectPropertyAddress {
+            selector,
+            scope: SCOPE_GLOBAL,
+            element: ELEMENT_MAIN,
+        };
+        let mut value: u32 = 0;
+        let mut size = std::mem::size_of::<u32>() as u32;
+        let status = unsafe {
+            AudioObjectGetPropertyData(
+                object,
+                &address,
+                0,
+                std::ptr::null(),
+                &mut size,
+                &mut value as *mut u32 as *mut c_void,
+            )
+        };
+        (status == 0).then_some(value)
+    }
+
+    fn mic_in_use() -> bool {
+        match get_u32(SYSTEM_OBJECT, DEFAULT_INPUT_DEVICE) {
+            Some(device) if device != 0 => get_u32(device, IS_RUNNING_SOMEWHERE).unwrap_or(0) != 0,
+            _ => false,
+        }
+    }
+
+    pub fn start(app: AppHandle) {
+        std::thread::spawn(move || {
+            // Seed with the current state so we don't pop on launch if a call is
+            // already in progress — only fire on a fresh activation.
+            let mut was_active = mic_in_use();
+            loop {
+                std::thread::sleep(Duration::from_secs(2));
+                let active = mic_in_use();
+                if active && !was_active {
+                    let handle = app.clone();
+                    let _ = app.run_on_main_thread(move || show_popup(&handle));
+                }
+                was_active = active;
+            }
+        });
+    }
+
+    // Window creation must happen on the main thread (callers use
+    // `run_on_main_thread`). Reuses the popup if it's already open.
+    fn show_popup(app: &AppHandle) {
+        if let Some(win) = app.get_webview_window("meeting-popup") {
+            let _ = win.show();
+            let _ = win.set_focus();
+            return;
+        }
+        let built = WebviewWindowBuilder::new(
+            app,
+            "meeting-popup",
+            WebviewUrl::App("meeting-popup.html".into()),
+        )
+        .title("Meeting Detected")
+        .inner_size(340.0, 158.0)
+        .resizable(false)
+        .decorations(false)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .center()
+        .build();
+
+        // Safety net: close the popup after 15s even if the web layer's timer
+        // never fires (e.g. the page failed to load). Matches the visible bar.
+        if built.is_ok() {
+            let app = app.clone();
+            std::thread::spawn(move || {
+                std::thread::sleep(Duration::from_secs(15));
+                let app = app.clone();
+                let _ = app.clone().run_on_main_thread(move || {
+                    if let Some(popup) = app.get_webview_window("meeting-popup") {
+                        let _ = popup.close();
+                    }
+                });
+            });
+        }
+    }
+}
+
+// Native macOS drag strip for the frameless ("Overlay") window. With the title
+// bar gone and web content filling the window, there's no native region to grab
+// the window by — so we add a transparent NSView across the top that reports
+// itself as window-movable. macOS then drags the window when the user grabs the
+// top, while the native traffic lights (rendered above everything) still click
+// through. Pure native — no web-side drag region, so it's independent of the
+// remotely-hosted frontend.
+#[cfg(target_os = "macos")]
+mod macos_titlebar {
+    use objc2::rc::Retained;
+    use objc2::{define_class, msg_send, MainThreadMarker, MainThreadOnly};
+    use objc2_app_kit::{NSAutoresizingMaskOptions, NSView, NSWindow};
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+    define_class!(
+        #[unsafe(super(NSView))]
+        #[name = "ContextBrainDragStrip"]
+        struct DragStrip;
+
+        impl DragStrip {
+            // Reporting YES here is what lets macOS move the window when this
+            // strip is dragged (combined with `setMovableByWindowBackground`).
+            #[unsafe(method(mouseDownCanMoveWindow))]
+            fn mouse_down_can_move_window(&self) -> bool {
+                true
+            }
+        }
+    );
+
+    pub fn install_drag_strip(ns_window_ptr: *mut std::ffi::c_void) {
+        let Some(mtm) = MainThreadMarker::new() else {
+            return;
+        };
+        // SAFETY: called on the main thread during `setup`, with the pointer
+        // Tauri handed us for the live "main" NSWindow.
+        let ns_window: &NSWindow = unsafe { &*(ns_window_ptr as *const NSWindow) };
+        ns_window.setMovableByWindowBackground(true);
+
+        let Some(content_view) = ns_window.contentView() else {
+            return;
+        };
+        let bounds = content_view.bounds();
+        let strip_height = 28.0;
+        // AppKit's origin is bottom-left, so the top strip sits at the top of
+        // the content view's height; the autoresizing mask keeps it pinned
+        // full-width to the top as the window resizes.
+        let frame = NSRect {
+            origin: NSPoint {
+                x: 0.0,
+                y: bounds.size.height - strip_height,
+            },
+            size: NSSize {
+                width: bounds.size.width,
+                height: strip_height,
+            },
+        };
+        let strip: Retained<DragStrip> =
+            unsafe { msg_send![DragStrip::alloc(mtm), initWithFrame: frame] };
+        strip.setAutoresizingMask(
+            NSAutoresizingMaskOptions::ViewWidthSizable | NSAutoresizingMaskOptions::ViewMinYMargin,
+        );
+        content_view.addSubview(&strip);
+    }
 }
 
 /// Launch-time update check, wired from the setup hook in release builds.

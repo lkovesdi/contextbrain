@@ -21,9 +21,13 @@
         "minHeight": 600,
         "fullscreen": false,
         "resizable": true,
-        "decorations": true
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
+        "backgroundColor": "#000"
       }
     ],
+    "withGlobalTauri": true,
     "security": {
       "csp": null
     }

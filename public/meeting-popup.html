@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Meeting Detected</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        height: 100%;
+        font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+        user-select: none;
+        cursor: default;
+        overflow: hidden;
+      }
+      .card {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        padding: 16px 16px 0;
+        background: #1b1c22;
+        color: #f2f1ed;
+      }
+      .eyebrow {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: #b4b5b8;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 999px;
+        background: #4b49e6;
+        box-shadow: 0 0 0 4px rgba(75, 73, 230, 0.18);
+        animation: pulse 1.8s ease-in-out infinite;
+      }
+      @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+      .title { margin-top: 9px; font-size: 15.5px; font-weight: 600; }
+      .sub { margin-top: 2px; font-size: 12.5px; color: #8b8c92; }
+      .btn {
+        margin-top: 13px;
+        width: 100%;
+        padding: 9px 12px;
+        border: none;
+        border-radius: 9px;
+        background: #4b49e6;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 120ms ease;
+      }
+      .btn:hover { background: #3835d4; }
+      .btn:active { background: #2a28b8; }
+      .timer {
+        margin-top: auto;
+        margin-bottom: 0;
+        height: 3px;
+        background: rgba(255, 255, 255, 0.08);
+        overflow: hidden;
+      }
+      .timer > i {
+        display: block;
+        height: 100%;
+        width: 100%;
+        background: #4b49e6;
+        transform-origin: left center;
+        animation: shrink 15s linear forwards;
+      }
+      @keyframes shrink { from { transform: scaleX(1); } to { transform: scaleX(0); } }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="eyebrow"><span class="dot"></span> Meeting Detected</div>
+      <div class="title">Start Meeting with ContextBrain</div>
+      <div class="sub">A call just started on your microphone.</div>
+      <button class="btn" id="start" type="button">Start Meeting</button>
+      <div class="timer"><i></i></div>
+    </div>
+    <script>
+      // Local window, so Tauri's bridge is injected. Prefer the public global
+      // API (withGlobalTauri), fall back to internals.
+      function invoke(cmd) {
+        try {
+          if (window.__TAURI__ && window.__TAURI__.core) {
+            return window.__TAURI__.core.invoke(cmd);
+          }
+          if (window.__TAURI_INTERNALS__) {
+            return window.__TAURI_INTERNALS__.invoke(cmd, {});
+          }
+        } catch (e) {}
+      }
+      document.getElementById("start").addEventListener("click", function () {
+        invoke("start_meeting");
+      });
+      // Auto-dismiss after 15s — matches the shrinking timer bar.
+      setTimeout(function () { invoke("dismiss_popup"); }, 15000);
+    </script>
+  </body>
+</html>

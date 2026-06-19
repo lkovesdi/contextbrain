@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Core capabilities for the main window. Deep-link + updater are added per-plugin; audio + filesystem will be scoped in later phases when those commands land.",
-  "windows": ["main"],
+  "windows": ["main", "meeting-popup"],
   "permissions": [
     "core:default",
     "deep-link:default",
