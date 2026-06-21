@@ -5,6 +5,7 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .manage(PendingUpdate::default())
         .setup(|app| {
             // First-launch hook. Phase 2 will register the Swift audio sidecar.
             //
@@ -55,7 +56,13 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![ping, start_meeting, dismiss_popup]);
+        .invoke_handler(tauri::generate_handler![
+            ping,
+            start_meeting,
+            dismiss_popup,
+            restart_app,
+            pending_update_version
+        ]);
 
     builder
         .run(tauri::generate_context!())
@@ -95,6 +102,48 @@ fn dismiss_popup(app: tauri::AppHandle) {
     if let Some(popup) = app.get_webview_window("meeting-popup") {
         let _ = popup.close();
     }
+}
+
+/// Version of an update that's been downloaded and staged but not yet applied.
+/// The "Relaunch to update" prompt reads this to show which version is waiting.
+#[derive(Default)]
+struct PendingUpdate(std::sync::Mutex<Option<String>>);
+
+#[tauri::command]
+fn pending_update_version(state: tauri::State<'_, PendingUpdate>) -> Option<String> {
+    state.0.lock().ok().and_then(|slot| slot.clone())
+}
+
+/// Relaunch the app to apply a staged update (called by the prompt's button).
+#[tauri::command]
+fn restart_app(app: tauri::AppHandle) {
+    app.restart();
+}
+
+// Small native "Relaunch to update" prompt, shown after the updater stages a
+// new version (release builds only). Native + local HTML, so it doesn't depend
+// on the remote frontend or its bridge. Must be created on the main thread.
+#[cfg(not(debug_assertions))]
+fn show_update_popup(app: &tauri::AppHandle) {
+    use tauri::{WebviewUrl, WebviewWindowBuilder};
+    if let Some(win) = app.get_webview_window("update-popup") {
+        let _ = win.show();
+        let _ = win.set_focus();
+        return;
+    }
+    let _ = WebviewWindowBuilder::new(
+        app,
+        "update-popup",
+        WebviewUrl::App("update-popup.html".into()),
+    )
+    .title("Update ready")
+    .inner_size(320.0, 96.0)
+    .resizable(false)
+    .decorations(false)
+    .always_on_top(true)
+    .skip_taskbar(true)
+    .center()
+    .build();
 }
 
 // Detects when any app starts using the microphone (i.e. a call beginning) and
@@ -299,12 +348,25 @@ async fn check_for_updates(app: tauri::AppHandle) -> tauri_plugin_updater::Resul
     use tauri_plugin_updater::UpdaterExt;
 
     if let Some(update) = app.updater()?.check().await? {
+        let version = update.version.clone();
         eprintln!(
             "updater: installing {} (was {})",
             update.version, update.current_version
         );
         update.download_and_install(|_, _| {}, || {}).await?;
-        eprintln!("updater: staged — applies on next launch");
+        eprintln!("updater: staged — applies on relaunch");
+
+        // Remember the staged version, then surface the "Relaunch to update"
+        // prompt so the user can apply it now instead of on their next launch.
+        if let Some(state) = app.try_state::<PendingUpdate>() {
+            if let Ok(mut slot) = state.0.lock() {
+                *slot = Some(version);
+            }
+        }
+        let app = app.clone();
+        let _ = app
+            .clone()
+            .run_on_main_thread(move || show_update_popup(&app));
     }
     Ok(())
 }
