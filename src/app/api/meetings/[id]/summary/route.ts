@@ -1,4 +1,4 @@
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropicModel } from "@/lib/llm";
 import { generateObject } from "ai";
 import { createClient } from "@/lib/supabase/server";
 import { embed } from "@/lib/embed";
@@ -385,7 +385,7 @@ export async function POST(
   let result;
   try {
     result = await generateObject({
-      model: anthropic("claude-opus-4-7"),
+      model: await anthropicModel(user.id, "claude-opus-4-8"),
       schema: SummaryOut,
       system: SYSTEM_PROMPT,
       prompt,

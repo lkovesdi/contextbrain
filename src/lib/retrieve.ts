@@ -8,9 +8,17 @@ export type ContextSelection = {
   // implicit context, not a user-facing toggle. `include_notes` remains an
   // ad-hoc runtime opt-in for cross-meeting notes search.
   include_notes?: boolean;
+  // Multi-meeting agent chat: vector-search transcripts across several selected
+  // meetings and fold each one's summary into the priority bucket. Independent
+  // of the singular `meeting_id` (per-meeting chat) above.
+  meeting_ids?: string[];
   external_context_ids?: string[];
   note_ids?: string[];
   space_id?: string | null;
+  // Space chat: search *everything in the space* — vector search across all
+  // its meetings' transcripts and its notes (on top of the recent summaries
+  // that `space_id` alone already pulls). Requires `space_id`.
+  space_wide?: boolean;
   // Co-tagged continuity: prior summaries from meetings sharing any of these
   // tags get pulled forward, the same way `space_id` pulls a folder's history.
   tag_ids?: string[];
@@ -62,6 +70,41 @@ export async function retrieve(
         source: `transcript (${r.speaker ?? "speaker"})`,
         score: r.similarity,
       })
+    );
+  }
+
+  // Space-wide search: every transcript line across the space's meetings plus
+  // the space's notes compete for ambient slots on similarity.
+  if (selection.space_id && selection.space_wide) {
+    const [{ data: spaceLines }, { data: spaceNotes }] = await Promise.all([
+      supabase.rpc("match_space_transcripts", {
+        query_embedding: qVec,
+        match_count: k,
+        user_id_filter: effectiveUserId,
+        space_id_filter: selection.space_id,
+      }),
+      supabase.rpc("match_space_notes", {
+        query_embedding: qVec,
+        match_count: k,
+        user_id_filter: effectiveUserId,
+        space_id_filter: selection.space_id,
+      }),
+    ]);
+    (spaceLines ?? []).forEach(
+      (r: {
+        content: string;
+        speaker: string | null;
+        meeting_title: string;
+        similarity: number;
+      }) =>
+        ambient.push({
+          content: r.content,
+          source: `“${r.meeting_title}” transcript (${r.speaker ?? "speaker"})`,
+          score: r.similarity,
+        })
+    );
+    (spaceNotes ?? []).forEach((r: { content: string; similarity: number }) =>
+      ambient.push({ content: r.content, source: "space note", score: r.similarity })
     );
   }
 
@@ -152,6 +195,66 @@ export async function retrieve(
         });
       }
     );
+  }
+
+  // Multi-meeting agent chat: fold each attached meeting's summary into priority
+  // (deduped against the space/tag summaries above), then vector-search each
+  // meeting's transcripts with a fair per-meeting share of k so one long meeting
+  // can't starve the others.
+  if (selection.meeting_ids?.length) {
+    const ids = selection.meeting_ids;
+    const { data: metas } = await supabase
+      .from("meetings")
+      .select("id, title, summary_title, summary, ended_at")
+      .in("id", ids)
+      .eq("user_id", effectiveUserId);
+    const headlineById = new Map<string, string>();
+    (metas ?? []).forEach(
+      (m: {
+        id: string;
+        title: string;
+        summary_title: string | null;
+        summary: string | null;
+        ended_at: string | null;
+      }) => {
+        const headline = m.summary_title?.trim() || m.title || "meeting";
+        headlineById.set(m.id, headline);
+        if (m.summary && !seenSummaryMeetings.has(m.id)) {
+          seenSummaryMeetings.add(m.id);
+          const date = m.ended_at
+            ? new Date(m.ended_at).toLocaleDateString()
+            : "";
+          priority.push({
+            content: `# ${headline}${date ? ` (${date})` : ""}\n\n${m.summary}`,
+            source: `meeting summary`,
+            score: 1,
+          });
+        }
+      }
+    );
+
+    const perMeeting = Math.max(1, Math.ceil(k / ids.length));
+    const perMeetingResults = await Promise.all(
+      ids.map((mid) =>
+        supabase.rpc("match_transcripts", {
+          query_embedding: qVec,
+          match_count: perMeeting,
+          user_id_filter: effectiveUserId,
+          meeting_id_filter: mid,
+        })
+      )
+    );
+    perMeetingResults.forEach(({ data }, i) => {
+      const label = headlineById.get(ids[i]) ?? "meeting";
+      (data ?? []).forEach(
+        (r: { content: string; speaker: string | null; similarity: number }) =>
+          ambient.push({
+            content: r.content,
+            source: `“${label}” transcript (${r.speaker ?? "speaker"})`,
+            score: r.similarity,
+          })
+      );
+    });
   }
 
   if (selection.external_context_ids?.length) {

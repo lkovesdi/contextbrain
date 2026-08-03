@@ -182,7 +182,7 @@ function MeetingRow({
   isLast: boolean;
   onDeleted: () => void;
 }) {
-  const live = !m.ended_at;
+  const duration = durationLabel(m.started_at, m.ended_at);
   return (
     <div
       className={[
@@ -196,19 +196,14 @@ function MeetingRow({
           href={`/meetings/${m.id}`}
           className="flex items-center gap-[14px] flex-1 min-w-0"
         >
-          <span
-            className={[
-              "w-[7px] h-[7px] rounded-full flex-shrink-0",
-              live ? "bg-pulse [animation:mb-pulse_1.4s_infinite]" : "bg-slate-3",
-            ].join(" ")}
-          />
+          <span className="w-[7px] h-[7px] rounded-full flex-shrink-0 bg-slate-3" />
           <div className="flex-1 min-w-0">
             <div className="text-[14px] font-medium text-ink tracking-[-0.005em] truncate">
               {displayTitle(m)}
             </div>
             <div className="font-mono text-[11px] text-slate mt-[3px] flex gap-[14px] truncate">
               <span>{m.started_at ? new Date(m.started_at).toLocaleString() : "—"}</span>
-              <span>· {live ? "in progress" : durationLabel(m.started_at, m.ended_at)}</span>
+              {duration && <span>· {duration}</span>}
             </div>
           </div>
         </Link>

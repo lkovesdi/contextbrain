@@ -105,6 +105,17 @@
   --d-2: 180ms;
   --d-3: 240ms;
   --d-4: 360ms;
+
+  /* ----- DESKTOP SHELL ----- */
+  /* Height of the native macOS traffic-light / drag-strip zone in the
+     Tauri app (28px NSView strip installed in src-tauri). 0 on web;
+     overridden via html[data-desktop="mac"], stamped pre-hydration in
+     the root layout. */
+  --titlebar-inset: 0px;
+}
+
+html[data-desktop="mac"] {
+  --titlebar-inset: 28px;
 }
 
 @theme inline {

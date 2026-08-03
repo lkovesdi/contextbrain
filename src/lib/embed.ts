@@ -1,9 +1,16 @@
 import OpenAI from "openai";
 
-const openai = new OpenAI();
+// Lazily instantiated so a missing OPENAI_API_KEY fails only when embedding is
+// actually attempted, instead of throwing at module load and crashing every
+// route that transitively imports this (retrieve → chat, summary, …).
+let _openai: OpenAI | null = null;
+function getOpenAI(): OpenAI {
+  if (!_openai) _openai = new OpenAI();
+  return _openai;
+}
 
 export async function embed(text: string): Promise<number[]> {
-  const res = await openai.embeddings.create({
+  const res = await getOpenAI().embeddings.create({
     model: "text-embedding-3-small",
     input: text.slice(0, 8000),
   });
@@ -12,7 +19,7 @@ export async function embed(text: string): Promise<number[]> {
 
 export async function embedBatch(texts: string[]): Promise<number[][]> {
   if (texts.length === 0) return [];
-  const res = await openai.embeddings.create({
+  const res = await getOpenAI().embeddings.create({
     model: "text-embedding-3-small",
     input: texts.map((t) => t.slice(0, 8000)),
   });

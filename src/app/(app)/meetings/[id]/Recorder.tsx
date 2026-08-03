@@ -7,7 +7,7 @@ import {
   LiveTranscriptionEvents,
   type LiveClient,
 } from "@deepgram/sdk";
-import { Play, SlidersHorizontal, Square } from "lucide-react";
+import { Mic, SlidersHorizontal, Square } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { Popover } from "@/components/ui/Popover";
@@ -597,52 +597,32 @@ export function Recorder({
     connRef.current?.finish();
   }, []);
 
-  // Auto-start recording when we arrive from the desktop "Meeting Detected"
-  // popup — the quick-start route redirects here with `?record=1`. Runs once,
-  // and strips the flag so a refresh doesn't kick off another recording.
-  const autoStartedRef = useRef(false);
-  useEffect(() => {
-    if (autoStartedRef.current || typeof window === "undefined") return;
-    if (new URLSearchParams(window.location.search).get("record") !== "1") return;
-    autoStartedRef.current = true;
-    window.history.replaceState(null, "", `/meetings/${meetingId}`);
-    // Defer out of the effect body so the synchronous setState inside start()
-    // doesn't trip the cascading-render rule, and the page can paint first.
-    queueMicrotask(() => void start());
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [meetingId]);
-
   return (
     <div className="flex flex-col gap-[14px]">
       <div className="flex flex-wrap items-center gap-3 font-mono text-[11px] text-slate">
         {recording ? (
           <Button
-            variant="icon"
+            variant="danger"
             size="md"
             onClick={stop}
             aria-label="Stop recording"
             title="Stop recording"
+            leftIcon={<Square size={12} strokeWidth={0} fill="currentColor" />}
+            rightIcon={<MiniWaveform active levelRef={levelRef} />}
           >
-            <Square size={13} strokeWidth={0} fill="currentColor" className="text-pulse" />
+            Stop
           </Button>
         ) : (
           <Button
-            variant="icon"
+            variant="ink"
             size="md"
             onClick={start}
             aria-label="Start recording"
             title="Start recording"
+            leftIcon={<Mic size={14} strokeWidth={1.6} />}
           >
-            <Play size={15} strokeWidth={0} fill="currentColor" className="text-cortex" />
+            Record
           </Button>
-        )}
-
-        {recording && (
-          <MiniWaveform
-            active={recording}
-            levelRef={levelRef}
-            barClassName="bg-cortex"
-          />
         )}
 
         <label className="flex items-center gap-2">

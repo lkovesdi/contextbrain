@@ -156,7 +156,6 @@ export default async function MeetingPage({
   const meetingTags = ((tagRows ?? []) as unknown as { tag: Tag | null }[])
     .map((r) => r.tag)
     .filter((t): t is Tag => !!t);
-  const live = !meeting.ended_at;
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
@@ -182,22 +181,10 @@ export default async function MeetingPage({
             spaces={(spaces ?? []) as { id: string; name: string; icon: string | null }[]}
             initialSpaceId={meeting.space_id ?? null}
           />
-          {live && (
-            <InviteButton
-              meetingId={meeting.id}
-              initialToken={meeting.share_token ?? null}
-            />
-          )}
-          {live ? (
-            <span className="inline-flex items-center gap-[6px] font-mono text-[11px] uppercase tracking-[0.08em] text-pulse">
-              <span className="w-[6px] h-[6px] rounded-full bg-pulse [animation:mb-pulse_1.4s_infinite]" />
-              Live
-            </span>
-          ) : (
-            <span className="font-mono text-[11px] text-slate uppercase tracking-[0.08em]">
-              Ended
-            </span>
-          )}
+          <InviteButton
+            meetingId={meeting.id}
+            initialToken={meeting.share_token ?? null}
+          />
         </div>
       </header>
 

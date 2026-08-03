@@ -16,6 +16,7 @@
         overflow: hidden;
       }
       .card {
+        position: relative;
         height: 100%;
         display: flex;
         flex-direction: column;
@@ -23,6 +24,24 @@
         background: #1b1c22;
         color: #f2f1ed;
       }
+      .close {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 22px;
+        height: 22px;
+        display: grid;
+        place-content: center;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: #8b8c92;
+        font-size: 15px;
+        line-height: 1;
+        cursor: pointer;
+        transition: background 120ms ease, color 120ms ease;
+      }
+      .close:hover { background: rgba(255, 255, 255, 0.08); color: #f2f1ed; }
       .eyebrow {
         display: flex;
         align-items: center;
@@ -79,6 +98,7 @@
   </head>
   <body>
     <div class="card">
+      <button class="close" id="dismiss" type="button" aria-label="Dismiss" title="Dismiss">✕</button>
       <div class="eyebrow"><span class="dot"></span> Meeting Detected</div>
       <div class="title">Start Meeting with ContextBrain</div>
       <div class="sub">A call just started on your microphone.</div>
@@ -100,6 +120,12 @@
       }
       document.getElementById("start").addEventListener("click", function () {
         invoke("start_meeting");
+      });
+      document.getElementById("dismiss").addEventListener("click", function () {
+        invoke("dismiss_popup");
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") invoke("dismiss_popup");
       });
       // Auto-dismiss after 15s — matches the shrinking timer bar.
       setTimeout(function () { invoke("dismiss_popup"); }, 15000);

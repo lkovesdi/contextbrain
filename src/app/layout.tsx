@@ -34,7 +34,18 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        {/* The same deployed frontend serves web and the Tauri desktop shell,
+            so desktop detection must happen at runtime. Tauri's init script
+            (window.isTauri) runs before page scripts, and this inline script
+            runs before first paint — the titlebar inset applies with no jump. */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `try{if((window.isTauri||window.__TAURI_INTERNALS__)&&/Mac/.test(navigator.userAgent))document.documentElement.setAttribute("data-desktop","mac")}catch(e){}`,
+          }}
+        />
+        {children}
+      </body>
     </html>
   );
 }

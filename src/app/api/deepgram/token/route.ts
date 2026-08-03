@@ -1,5 +1,6 @@
 import { createClient as createDg } from "@deepgram/sdk";
 import { createClient } from "@/lib/supabase/server";
+import { resolveKey } from "@/lib/settings";
 import { NextResponse } from "next/server";
 
 export async function GET() {
@@ -9,15 +10,21 @@ export async function GET() {
   } = await supabase.auth.getUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const dg = createDg(process.env.DEEPGRAM_API_KEY!);
-  const { result, error } = await dg.manage.createProjectKey(
-    process.env.DEEPGRAM_PROJECT_ID!,
-    {
-      comment: "Ephemeral browser key",
-      scopes: ["usage:write"],
-      time_to_live_in_seconds: 3600,
-    }
-  );
+  // Per-user key when set, else the platform Deepgram key (resolveKey handles
+  // the fallback). Both key and project are needed to mint an ephemeral key.
+  const { apiKey, projectId } = await resolveKey(user.id, "deepgram");
+  if (!apiKey || !projectId) {
+    return NextResponse.json(
+      { error: "Deepgram isn't configured. Add your key in Settings." },
+      { status: 400 }
+    );
+  }
+  const dg = createDg(apiKey);
+  const { result, error } = await dg.manage.createProjectKey(projectId, {
+    comment: "Ephemeral browser key",
+    scopes: ["usage:write"],
+    time_to_live_in_seconds: 3600,
+  });
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ key: result.key });
 }

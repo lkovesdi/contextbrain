@@ -1,4 +1,4 @@
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropicModel } from "@/lib/llm";
 import { streamText } from "ai";
 import { retrieve, type RetrievedChunk, type ContextSelection } from "@/lib/retrieve";
 import { createClient } from "@/lib/supabase/server";
@@ -21,6 +21,7 @@ const Body = z.object({
       external_context_ids: z.array(z.string().uuid()).optional(),
       note_ids: z.array(z.string().uuid()).optional(),
       space_id: z.string().uuid().nullable().optional(),
+      space_wide: z.boolean().optional(),
       tag_ids: z.array(z.string().uuid()).optional(),
       recent_summary_count: z.number().int().min(1).max(20).optional(),
       integrations: z
@@ -42,6 +43,8 @@ const Body = z.object({
     })
     .default({}),
   meeting_id: z.string().uuid().optional(),
+  // Space chat: persists the thread against the space instead of a meeting.
+  space_id: z.string().uuid().optional(),
 });
 
 export async function POST(req: Request) {
@@ -49,7 +52,7 @@ export async function POST(req: Request) {
   if (!parsed.success) {
     return new Response(parsed.error.message, { status: 400 });
   }
-  const { messages, selection, meeting_id } = parsed.data;
+  const { messages, selection, meeting_id, space_id } = parsed.data;
 
   const supabase = await createClient();
   const {
@@ -116,9 +119,27 @@ export async function POST(req: Request) {
     }
   }
 
+  // Space chat: owner-only (no guest flow). RLS hides spaces the caller
+  // doesn't own, so a foreign space_id just comes back empty.
+  if (space_id) {
+    const { data: spaceRow } = await supabase
+      .from("spaces")
+      .select("id")
+      .eq("id", space_id)
+      .single();
+    if (!spaceRow) return new Response("Forbidden", { status: 403 });
+  }
+
   let chunks: RetrievedChunk[] = [];
   if (lastUserMsg.trim()) {
-    chunks = await retrieve(lastUserMsg, effectiveSelection, 8, contextUserId);
+    // Space chats search wider (all meetings in the folder), so give them a
+    // few more ambient slots than a single-meeting chat needs.
+    chunks = await retrieve(
+      lastUserMsg,
+      effectiveSelection,
+      space_id ? 12 : 8,
+      contextUserId
+    );
   }
 
   // TEMP DIAGNOSTIC — remove once guest context is confirmed working.
@@ -180,10 +201,16 @@ Never write meta-commentary like "based on the retrieved context," "the context 
 
 When a retrieved chunk includes a \`screenshot_url:\`, show the image inline with markdown: \`![<short alt>](<url>)\`. Do this when the user asks to *see*, *show*, or *look at* something. Don't invent URLs — only use ones present in retrieved context.${contextBlock}`;
 
-  // Persist the user message + which sources we retrieved (don't block on it)
-  if (meeting_id && lastUserMsg.trim()) {
+  // Persist the user message + which sources we retrieved (don't block on it).
+  // Meeting chats key on meeting_id, space chats on space_id.
+  const persistKey = meeting_id
+    ? { meeting_id }
+    : space_id
+      ? { space_id }
+      : null;
+  if (persistKey && lastUserMsg.trim()) {
     void supabase.from("chat_messages").insert({
-      meeting_id,
+      ...persistKey,
       user_id: user.id,
       role: "user",
       content: lastUserMsg,
@@ -198,16 +225,16 @@ When a retrieved chunk includes a \`screenshot_url:\`, show the image inline wit
       cleanMessages.reduce((sum, m) => sum + m.content.length, 0)) /
       4
   );
-  const modelId = approxTokens > 30_000 ? "claude-sonnet-4-6" : "claude-opus-4-7";
+  const modelId = approxTokens > 30_000 ? "claude-sonnet-4-6" : "claude-opus-4-8";
 
   const result = streamText({
-    model: anthropic(modelId),
+    model: await anthropicModel(user.id, modelId),
     system,
     messages: cleanMessages,
     onFinish: async ({ text }) => {
-      if (meeting_id && text) {
+      if (persistKey && text) {
         await supabase.from("chat_messages").insert({
-          meeting_id,
+          ...persistKey,
           user_id: user.id,
           role: "assistant",
           content: text,

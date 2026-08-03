@@ -433,6 +433,25 @@ async function getRepoTreeRecursive(
   return { blobs, truncated: !!data.truncated };
 }
 
+// Filtered path listing for the architecture-diagram digest — the same skip
+// rules as collectFiles, but paths only (no content fetches), so a large repo
+// costs one tree call instead of hundreds of content calls.
+export async function listRepoPaths(
+  userId: string,
+  owner: string,
+  repo: string,
+  ref: string
+): Promise<{ path: string; size: number }[]> {
+  const { blobs } = await getRepoTreeRecursive(userId, owner, repo, ref);
+  return blobs.filter((b) => {
+    if (b.path.split("/").some((seg) => SKIP_DIRS.has(seg))) return false;
+    if (isSkippedFilename(b.path)) return false;
+    if (!isTextPath(b.path)) return false;
+    if (b.size > MAX_FILE_BYTES) return false;
+    return true;
+  });
+}
+
 export type CollectFilesOptions = {
   // Called once after we know how many files survived filtering — the indexer
   // uses this to set chunks_total so the progress ring has something to fill.

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useRef, type ComponentType } from "react";
-import { Mic, Database, FolderClosed } from "lucide-react";
+import { Mic, Database, FolderClosed, Settings, Workflow } from "lucide-react";
 import PlugConnectedIcon from "@/components/icons/PlugConnectedIcon";
 import BookmarkIcon from "@/components/icons/BookmarkIcon";
 import type { AnimatedIconHandle } from "@/components/icons/types";
@@ -25,8 +25,10 @@ const NAV: NavEntry[] = [
   { kind: "static",   href: "/meetings",     label: "Meetings",     icon: Mic,          match: (p) => p.startsWith("/meetings") },
   { kind: "static",   href: "/spaces",       label: "Spaces",       icon: FolderClosed, match: (p) => p.startsWith("/spaces") },
   { kind: "static",   href: "/contexts",     label: "Contexts",     icon: Database,     match: (p) => p.startsWith("/contexts") },
+  { kind: "static",   href: "/diagrams",     label: "Diagrams",     icon: Workflow,     match: (p) => p.startsWith("/diagrams") },
   { kind: "animated", href: "/presets",      label: "Presets",      icon: "bookmark",   match: (p) => p.startsWith("/presets") },
   { kind: "animated", href: "/integrations", label: "Integrations", icon: "plug",       match: (p) => p.startsWith("/integrations") },
+  { kind: "static",   href: "/settings",     label: "Settings",     icon: Settings,     match: (p) => p.startsWith("/settings") },
 ];
 
 const ROW_CLASSES = (active: boolean) =>
@@ -47,8 +49,11 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
 
+  // In the desktop app the top --titlebar-inset (28px) of the window is the
+  // native traffic-light / drag-strip zone — content there is covered and
+  // clicks drag the window, so the brand must start below it.
   return (
-    <aside className="hidden md:flex md:flex-col w-[224px] flex-shrink-0 bg-bone-2 border-r border-mist p-[18px] gap-[22px]">
+    <aside className="hidden md:flex md:flex-col w-[224px] flex-shrink-0 bg-bone-2 border-r border-mist p-[18px] pt-[calc(18px+var(--titlebar-inset,0px))] gap-[22px]">
       <Link href="/meetings" className="flex flex-col gap-[6px] px-1 py-0.5 -mx-1">
         <span className="flex items-center gap-[10px]">
           <LogoMark size={22} />

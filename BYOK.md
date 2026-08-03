@@ -1,8 +1,19 @@
 # Feature: Bring Your Own Key (BYOK) + Model Selection
 
-**Status:** Proposed
+**Status:** Partially implemented (2026-07-22)
 **Owner:** TBD
-**Last updated:** 2026-06-17
+**Last updated:** 2026-07-22
+
+> **Shipped (2026-07-22):** Settings page (`/settings` + Sidebar entry), `user_settings`
+> table (migration 0015), app-side AES-256-GCM crypto ([src/lib/crypto.ts](src/lib/crypto.ts),
+> key = `BYOK_ENCRYPTION_KEY`), the `resolveKey` fallback resolver
+> ([src/lib/settings.ts](src/lib/settings.ts)), settings APIs (`/api/settings`,
+> `/api/settings/keys`), and per-user credential cards for **Anthropic** + **Deepgram**,
+> wired into the chat/catch-up/summary routes and the Deepgram token route (Opus default
+> bumped to `claude-opus-4-8`). Composio → linked to Integrations (OAuth, app-level).
+> **Deferred:** per-task model-selection dropdowns + live model lists (phase 2/3),
+> live key validation on save, and per-user OpenAI embeddings (locked to platform — see
+> Embeddings caveat).
 
 ## Summary
 

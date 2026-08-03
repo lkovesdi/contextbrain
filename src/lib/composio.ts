@@ -17,10 +17,23 @@ const TOOLKIT_VERSIONS = {
   figma: "20260506_01",
 };
 
-export const composio = new Composio({
-  apiKey: process.env.COMPOSIO_API_KEY!,
-  toolkitVersions: TOOLKIT_VERSIONS,
-});
+// Lazily instantiated rather than at module load: a missing COMPOSIO_API_KEY
+// should disable integration features on use, not throw at import time and crash
+// every page that transitively imports this module. Callers already degrade
+// gracefully — findActiveConnection guards on the (also-optional) auth-config
+// env and swallows errors, returning null ("not connected").
+let _composio: Composio | null = null;
+export function getComposio(): Composio {
+  if (_composio) return _composio;
+  const apiKey = process.env.COMPOSIO_API_KEY;
+  if (!apiKey) {
+    throw new Error(
+      "COMPOSIO_API_KEY is not configured — integration features are unavailable."
+    );
+  }
+  _composio = new Composio({ apiKey, toolkitVersions: TOOLKIT_VERSIONS });
+  return _composio;
+}
 
 export type Provider =
   | "github"
@@ -48,7 +61,7 @@ export const AUTH_CONFIG: Record<Provider, string | undefined> = {
 const fetchToolkitLogo = unstable_cache(
   async (slug: Provider): Promise<string | null> => {
     try {
-      const t = await composio.toolkits.get(slug);
+      const t = await getComposio().toolkits.get(slug);
       return t.meta?.logo ?? null;
     } catch (e) {
       console.error(`composio.toolkits.get(${slug}) failed:`, e);
@@ -79,14 +92,14 @@ export async function executeTool(
     connectedAccountId?: string;
   }
 ): Promise<unknown> {
-  return composio.tools.execute(slug, params);
+  return getComposio().tools.execute(slug, params);
 }
 
 export async function findActiveConnection(userId: string, provider: Provider) {
   const authConfigId = AUTH_CONFIG[provider];
   if (!authConfigId) return null;
   try {
-    const list = await composio.connectedAccounts.list({
+    const list = await getComposio().connectedAccounts.list({
       userIds: [userId],
       authConfigIds: [authConfigId],
       statuses: ["ACTIVE"],
@@ -113,7 +126,7 @@ export async function initiateConnection(
   // Composio appends `?status=success` (or `?status=failed`) to the callbackUrl
   // when the user completes OAuth — so we route them back through our own
   // callback handler to flip the integrations row out of `pending`.
-  const conn = await composio.connectedAccounts.link(userId, authConfigId, {
+  const conn = await getComposio().connectedAccounts.link(userId, authConfigId, {
     callbackUrl,
   });
   return {

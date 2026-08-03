@@ -6,6 +6,7 @@ import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
+import { Modal, ModalHeader, ModalBody, ModalFooter } from "@/components/ui/Modal";
 import { parseTagInput, tagDisplay, type Tag, type TagSpec } from "@/lib/tags";
 
 type Preset = { id: string; name: string };
@@ -111,128 +112,120 @@ export function NewMeetingButton({ presets }: { presets: Preset[] }) {
         New meeting
       </Button>
 
-      {open && (
-        <div
-          onClick={() => setOpen(false)}
-          className="fixed inset-0 z-40 flex items-center justify-center p-6 bg-[rgba(20,21,26,0.20)] backdrop-blur-[2px]"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-[420px] bg-bone-2 rounded-[14px] p-6 flex flex-col gap-4"
-            style={{ boxShadow: "var(--shadow-4)" }}
-          >
-            <h2 className="font-display text-[24px] font-normal tracking-[-0.012em] text-ink m-0">
-              Start a new meeting
-            </h2>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        size="md"
+        labelledBy="new-meeting-title"
+      >
+        <ModalHeader id="new-meeting-title">Start a new meeting</ModalHeader>
+        <ModalBody className="flex flex-col gap-4">
+          <Input
+            label="Title"
+            placeholder="Untitled meeting"
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+            autoFocus
+          />
 
-            <Input
-              label="Title"
-              placeholder="Untitled meeting"
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              autoFocus
-            />
-
-            <div className="flex flex-col gap-[5px]">
-              <span className="text-[12px] font-medium text-ink-2">
-                Tags (optional)
-              </span>
-              {selectedTags.length > 0 && (
-                <div className="flex flex-wrap gap-[6px] mb-1">
-                  {selectedTags.map((s, i) => (
-                    <span
-                      key={`${s.label_key ?? ""}-${s.value}-${i}`}
-                      className="inline-flex items-center gap-[5px] pl-[9px] pr-[5px] py-[3px] rounded-full text-[11px] border border-mist bg-paper-2 text-ink-2"
+          <div className="flex flex-col gap-[5px]">
+            <span className="text-[12px] font-medium text-ink-2">
+              Tags (optional)
+            </span>
+            {selectedTags.length > 0 && (
+              <div className="flex flex-wrap gap-[6px] mb-1">
+                {selectedTags.map((s, i) => (
+                  <span
+                    key={`${s.label_key ?? ""}-${s.value}-${i}`}
+                    className="inline-flex items-center gap-[5px] pl-[9px] pr-[5px] py-[3px] rounded-full text-[11px] border border-mist bg-paper-2 text-ink-2"
+                  >
+                    <TagText spec={s} />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedTags((cur) => cur.filter((_, j) => j !== i))
+                      }
+                      aria-label={`Remove ${tagDisplay(s)}`}
+                      className="grid place-content-center w-[14px] h-[14px] rounded-full text-slate-2 hover:text-ink hover:bg-mist bg-transparent border-0 cursor-pointer"
                     >
-                      <TagText spec={s} />
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setSelectedTags((cur) => cur.filter((_, j) => j !== i))
-                        }
-                        aria-label={`Remove ${tagDisplay(s)}`}
-                        className="grid place-content-center w-[14px] h-[14px] rounded-full text-slate-2 hover:text-ink hover:bg-mist bg-transparent border-0 cursor-pointer"
-                      >
-                        <X size={10} strokeWidth={2} />
-                      </button>
-                    </span>
+                      <X size={10} strokeWidth={2} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <div className="relative">
+              <input
+                value={tagQuery}
+                onChange={(e) => setTagQuery(e.target.value)}
+                onFocus={() => setTagFocused(true)}
+                onBlur={() => setTimeout(() => setTagFocused(false), 120)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && parsedTag) {
+                    e.preventDefault();
+                    addSpec(parsedTag);
+                  }
+                }}
+                placeholder="Tag, or key: value…"
+                className="w-full rounded-[6px] bg-bone-2 border border-mist px-3 py-[9px] text-[13px] text-ink outline-none"
+              />
+              {tagFocused && (availableTags.length > 0 || showCreateTag) && (
+                <div
+                  className="absolute left-0 right-0 top-full mt-1 z-10 rounded-[8px] border border-mist bg-bone-2 py-[5px] max-h-[180px] overflow-y-auto"
+                  style={{ boxShadow: "var(--shadow-3)" }}
+                >
+                  {showCreateTag && parsedTag && (
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => addSpec(parsedTag)}
+                      className="w-full flex items-center gap-2 px-3 py-[7px] text-[12.5px] text-left text-cortex-ink hover:bg-cortex-tint cursor-pointer"
+                    >
+                      <Plus size={12} strokeWidth={1.8} />
+                      <span>
+                        Create{" "}
+                        <span className="font-medium">{tagDisplay(parsedTag)}</span>
+                      </span>
+                    </button>
+                  )}
+                  {availableTags.map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() =>
+                        addSpec({ label_key: t.label_key, value: t.value })
+                      }
+                      className="w-full flex items-center gap-2 px-3 py-[7px] text-[12.5px] text-left text-ink hover:bg-paper-2 cursor-pointer"
+                    >
+                      <TagText spec={t} />
+                    </button>
                   ))}
                 </div>
               )}
-              <div className="relative">
-                <input
-                  value={tagQuery}
-                  onChange={(e) => setTagQuery(e.target.value)}
-                  onFocus={() => setTagFocused(true)}
-                  onBlur={() => setTimeout(() => setTagFocused(false), 120)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && parsedTag) {
-                      e.preventDefault();
-                      addSpec(parsedTag);
-                    }
-                  }}
-                  placeholder="Tag, or key: value…"
-                  className="w-full rounded-[6px] bg-bone-2 border border-mist px-3 py-[9px] text-[13px] text-ink outline-none"
-                />
-                {tagFocused && (availableTags.length > 0 || showCreateTag) && (
-                  <div
-                    className="absolute left-0 right-0 top-full mt-1 z-10 rounded-[8px] border border-mist bg-bone-2 py-[5px] max-h-[180px] overflow-y-auto"
-                    style={{ boxShadow: "var(--shadow-3)" }}
-                  >
-                    {showCreateTag && parsedTag && (
-                      <button
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() => addSpec(parsedTag)}
-                        className="w-full flex items-center gap-2 px-3 py-[7px] text-[12.5px] text-left text-cortex-ink hover:bg-cortex-tint cursor-pointer"
-                      >
-                        <Plus size={12} strokeWidth={1.8} />
-                        <span>
-                          Create{" "}
-                          <span className="font-medium">{tagDisplay(parsedTag)}</span>
-                        </span>
-                      </button>
-                    )}
-                    {availableTags.map((t) => (
-                      <button
-                        key={t.id}
-                        type="button"
-                        onMouseDown={(e) => e.preventDefault()}
-                        onClick={() =>
-                          addSpec({ label_key: t.label_key, value: t.value })
-                        }
-                        className="w-full flex items-center gap-2 px-3 py-[7px] text-[12.5px] text-left text-ink hover:bg-paper-2 cursor-pointer"
-                      >
-                        <TagText spec={t} />
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <Select
-              label="Context preset (optional)"
-              fullWidth
-              value={presetId}
-              onChange={setPresetId}
-              options={[
-                { value: "", label: "— None —" },
-                ...presets.map((p) => ({ value: p.id, label: p.name })),
-              ]}
-            />
-
-            <div className="flex justify-end gap-2 mt-1">
-              <Button variant="secondary" onClick={() => setOpen(false)}>
-                Cancel
-              </Button>
-              <Button variant="ink" disabled={busy} onClick={createMeeting}>
-                {busy ? "Creating…" : "Create"}
-              </Button>
             </div>
           </div>
-        </div>
-      )}
+
+          <Select
+            label="Context preset (optional)"
+            fullWidth
+            value={presetId}
+            onChange={setPresetId}
+            options={[
+              { value: "", label: "— None —" },
+              ...presets.map((p) => ({ value: p.id, label: p.name })),
+            ]}
+          />
+        </ModalBody>
+        <ModalFooter>
+          <Button variant="secondary" onClick={() => setOpen(false)}>
+            Cancel
+          </Button>
+          <Button variant="ink" disabled={busy} onClick={createMeeting}>
+            {busy ? "Creating…" : "Create"}
+          </Button>
+        </ModalFooter>
+      </Modal>
     </>
   );
 }

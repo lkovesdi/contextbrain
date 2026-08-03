@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 // popup can't create a meeting itself (it has no session), so its "Start
 // Meeting" button navigates the main window — which holds the logged-in
 // session — here. We create a fresh meeting with a generic title and redirect
-// straight into it, so a detected call is captured in one click.
+// straight into it; the user presses Record when they're ready.
 //
 // GET (not POST) on purpose: a plain window navigation triggers it. The
 // trade-off is that re-visiting this URL creates another meeting — acceptable
@@ -32,6 +32,5 @@ export async function GET(req: Request) {
     return NextResponse.redirect(new URL("/meetings", req.url));
   }
 
-  // `?record=1` tells the Recorder to start capturing immediately on arrival.
-  return NextResponse.redirect(new URL(`/meetings/${data.id}?record=1`, req.url));
+  return NextResponse.redirect(new URL(`/meetings/${data.id}`, req.url));
 }

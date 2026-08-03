@@ -1,4 +1,4 @@
-import { anthropic } from "@ai-sdk/anthropic";
+import { anthropicModel } from "@/lib/llm";
 import { streamText } from "ai";
 import { createClient } from "@/lib/supabase/server";
 
@@ -75,10 +75,10 @@ Write exactly two parts in GitHub-flavored markdown:
 Do not add any other headings, preamble, or closing remarks.`;
 
   const approxTokens = Math.ceil((system.length + prompt.length) / 4);
-  const modelId = approxTokens > 30_000 ? "claude-sonnet-4-6" : "claude-opus-4-7";
+  const modelId = approxTokens > 30_000 ? "claude-sonnet-4-6" : "claude-opus-4-8";
 
   const result = streamText({
-    model: anthropic(modelId),
+    model: await anthropicModel(user.id, modelId),
     system,
     prompt,
   });
