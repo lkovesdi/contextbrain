@@ -44,16 +44,33 @@ export function SummarySection({
       const res = await fetch(`/api/meetings/${meetingId}/summary`, {
         method: "POST",
       });
-      const j = await res.json();
+      const j = await res.json().catch(() => ({}));
       if (!res.ok) {
         setError(j.error ?? `Regenerate failed (${res.status})`);
         return;
       }
-      if (typeof j.title === "string") setTitle(j.title);
-      if (typeof j.summary === "string") setSummary(j.summary);
-      if (j.extras && typeof j.extras === "object") setExtras(j.extras);
-      // Re-fetch server data so any related panels (sidebar, etc.) update too.
-      router.refresh();
+      // 202 — generation runs server-side (it survives leaving this page).
+      // Poll until it lands, then adopt the fresh summary in place. The cap
+      // only bounds this page's spinner; the run itself keeps going.
+      for (let attempt = 0; attempt < 60; attempt++) {
+        await new Promise((resolve) => setTimeout(resolve, 4000));
+        const poll = await fetch(`/api/meetings/${meetingId}/summary`);
+        if (!poll.ok) continue;
+        const s = await poll.json();
+        if (s.status === "error") {
+          setError(s.error ?? "Regenerate failed");
+          return;
+        }
+        if (!s.status) {
+          if (typeof s.title === "string") setTitle(s.title);
+          if (typeof s.summary === "string") setSummary(s.summary);
+          if (s.extras && typeof s.extras === "object") setExtras(s.extras);
+          // Re-fetch server data so any related panels (sidebar, etc.) update too.
+          router.refresh();
+          return;
+        }
+      }
+      setError("Still generating — check back in a minute.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Regenerate failed");
     } finally {

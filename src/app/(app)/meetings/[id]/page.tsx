@@ -202,6 +202,7 @@ export default async function MeetingPage({
             initialSpeakerNames={
               (meeting.speaker_names ?? {}) as Record<string, string>
             }
+            initialSummaryStatus={meeting.summary_status ?? null}
           />
           {meeting.summary && (
             <SummarySection

@@ -252,10 +252,14 @@ export function Recorder({
   meetingId,
   initialLines,
   initialSpeakerNames = {},
+  initialSummaryStatus = null,
 }: {
   meetingId: string;
   initialLines: StoredLine[];
   initialSpeakerNames?: SpeakerNames;
+  // meetings.summary_status at render time — 'generating' means a server-side
+  // run is already in flight (e.g. the user left mid-generation and came back).
+  initialSummaryStatus?: string | null;
 }) {
   const [recording, setRecording] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -288,7 +292,11 @@ export function Recorder({
   // so teardownAudio can unregister it.
   const retuneRef = useRef<(() => void) | null>(null);
   const [summaryState, setSummaryState] = useState<"idle" | "generating" | "error">(
-    "idle"
+    initialSummaryStatus === "generating"
+      ? "generating"
+      : initialSummaryStatus === "error"
+        ? "error"
+        : "idle"
   );
   const router = useRouter();
   const connRef = useRef<LiveClient | null>(null);
@@ -615,31 +623,58 @@ export function Recorder({
     streamRef.current = null;
   }
 
-  function stop() {
-    teardownAudio();
-    connRef.current?.finish();
-    setRecording(false);
+  // The two "meeting is over" requests. Summary generation runs server-side
+  // (the POST returns 202 immediately), and `keepalive` lets both requests
+  // survive navigation or the window closing — so leaving the meeting can't
+  // orphan the notes.
+  function requestSummary(): Promise<Response> {
     fetch(`/api/meetings/${meetingId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ended_at: new Date().toISOString() }),
+      keepalive: true,
     }).catch(() => {});
+    return fetch(`/api/meetings/${meetingId}/summary`, {
+      method: "POST",
+      keepalive: true,
+    });
+  }
 
+  function stop() {
+    teardownAudio();
+    connRef.current?.finish();
+    setRecording(false);
     setSummaryState("generating");
-    fetch(`/api/meetings/${meetingId}/summary`, { method: "POST" })
-      .then(async (res) => {
-        if (!res.ok) {
-          setSummaryState("error");
-          return;
-        }
-        setSummaryState("idle");
-        // Server-rendered meeting page reads summary + summary_title from
-        // the row — refresh so the new title and body show up without a
-        // hard reload.
-        router.refresh();
+    requestSummary()
+      .then((res) => {
+        // 202 = generation started server-side; the poll effect below picks
+        // up the outcome. Anything else is an immediate failure.
+        if (!res.ok) setSummaryState("error");
       })
       .catch(() => setSummaryState("error"));
   }
+
+  // While a server-side generation is in flight, poll for the outcome; when
+  // the summary lands, refresh so the page swaps to the summary view.
+  useEffect(() => {
+    if (summaryState !== "generating") return;
+    const t = setInterval(async () => {
+      try {
+        const res = await fetch(`/api/meetings/${meetingId}/summary`);
+        if (!res.ok) return;
+        const j = await res.json();
+        if (j.status === "error") {
+          setSummaryState("error");
+        } else if (!j.status && j.hasSummary) {
+          setSummaryState("idle");
+          router.refresh();
+        }
+      } catch {
+        // transient network failure — keep polling
+      }
+    }, 4000);
+    return () => clearInterval(t);
+  }, [summaryState, meetingId, router]);
 
   // Auto-start recording when we arrive from the desktop "Meeting Detected"
   // popup — the quick-start route redirects here with `?record=1`. Runs once,
@@ -658,9 +693,24 @@ export function Recorder({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetingId]);
 
+  // Mirror `recording` into a ref so the unmount cleanup below sees the
+  // current value without re-registering.
+  const recordingRef = useRef(false);
+  useEffect(() => {
+    recordingRef.current = recording;
+  }, [recording]);
+
   useEffect(() => () => {
+    // Backing out of the meeting mid-recording must not orphan it: end the
+    // meeting and kick off server-side notes exactly like pressing Stop —
+    // the keepalive requests outlive this component (and the window).
+    if (recordingRef.current) {
+      recordingRef.current = false;
+      requestSummary().catch(() => {});
+    }
     teardownAudio();
     connRef.current?.finish();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
