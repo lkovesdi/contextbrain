@@ -641,6 +641,23 @@ export function Recorder({
       .catch(() => setSummaryState("error"));
   }
 
+  // Auto-start recording when we arrive from the desktop "Meeting Detected"
+  // popup — the quick-start route redirects here with `?record=1`. Runs once,
+  // and strips the flag so a refresh doesn't kick off another recording.
+  // (Restored: this shipped in eedf2e6 and was accidentally reverted by the
+  // agent-chat working-copy commit 1612b4a.)
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoStartedRef.current || typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("record") !== "1") return;
+    autoStartedRef.current = true;
+    window.history.replaceState(null, "", `/meetings/${meetingId}`);
+    // Defer out of the effect body so the synchronous setState inside start()
+    // doesn't trip the cascading-render rule, and the page can paint first.
+    queueMicrotask(() => void start());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [meetingId]);
+
   useEffect(() => () => {
     teardownAudio();
     connRef.current?.finish();

@@ -82,6 +82,12 @@ fn ping() -> &'static str {
 /// surface the main window and dismiss the popup.
 #[tauri::command]
 fn start_meeting(app: tauri::AppHandle) {
+    // Close the popup before touching the main window: navigation + focus can
+    // take visible time, and a popup that lingers through it reads as a
+    // broken button.
+    if let Some(popup) = app.get_webview_window("meeting-popup") {
+        let _ = popup.close();
+    }
     if let Some(main) = app.get_webview_window("main") {
         if let Ok(url) = tauri::Url::parse("https://contextbrain.vercel.app/api/meetings/quick-start")
         {
@@ -90,9 +96,6 @@ fn start_meeting(app: tauri::AppHandle) {
         let _ = main.unminimize();
         let _ = main.show();
         let _ = main.set_focus();
-    }
-    if let Some(popup) = app.get_webview_window("meeting-popup") {
-        let _ = popup.close();
     }
 }
 
@@ -255,6 +258,10 @@ mod mic_monitor {
         .decorations(false)
         .always_on_top(true)
         .skip_taskbar(true)
+        // The user is mid-call, so the popup is usually not the key window.
+        // Without this, macOS spends the first click focusing the window and
+        // the button only reacts to the second — the "have to click twice" bug.
+        .accept_first_mouse(true)
         .center()
         .build();
 
