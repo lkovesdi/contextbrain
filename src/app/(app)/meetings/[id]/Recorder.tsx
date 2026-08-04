@@ -372,7 +372,7 @@ export function Recorder({
             <span className="w-[6px] h-[6px] rounded-full bg-pulse [animation:mb-pulse_1.4s_infinite]" />
             Recording another meeting —{" "}
             <Link
-              href={`/meetings/${session!.meetingId}`}
+              href={`/meetings/${session!.meetingId}?continue=1`}
               className="cursor-pointer text-cortex-ink underline underline-offset-2"
             >
               go to it

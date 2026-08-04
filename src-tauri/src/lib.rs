@@ -33,6 +33,35 @@ pub fn run() {
                 }
             }
 
+            // Menu bar icon: the app can now run with no visible windows
+            // (red X hides instead of quitting), so the tray is the always-
+            // present handle to reopen or quit it.
+            {
+                use tauri::menu::{Menu, MenuItem};
+                use tauri::tray::TrayIconBuilder;
+                let open = MenuItem::with_id(app, "open", "Open ContextBrain", true, None::<&str>)?;
+                let quit = MenuItem::with_id(app, "quit", "Quit ContextBrain", true, None::<&str>)?;
+                let menu = Menu::with_items(app, &[&open, &quit])?;
+                let mut tray = TrayIconBuilder::with_id("tray")
+                    .menu(&menu)
+                    .show_menu_on_left_click(true)
+                    .on_menu_event(|app, event| match event.id.as_ref() {
+                        "open" => {
+                            if let Some(main) = app.get_webview_window("main") {
+                                let _ = main.unminimize();
+                                let _ = main.show();
+                                let _ = main.set_focus();
+                            }
+                        }
+                        "quit" => app.exit(0),
+                        _ => {}
+                    });
+                if let Some(icon) = app.default_window_icon() {
+                    tray = tray.icon(icon.clone());
+                }
+                tray.build(app)?;
+            }
+
             // Watch the microphone: when any app starts using it (a call
             // beginning), pop the "Meeting Detected" prompt. macOS only for now.
             #[cfg(target_os = "macos")]
@@ -70,13 +99,14 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // The recording widget panel is never destroyed (closing the
-            // class-swapped panel aborts — see widget_hide), so once it
-            // exists the app would no longer auto-exit when the last real
-            // window closes. Restore that: closing the main window quits.
+            // Granola-style: the red X hides the main window instead of
+            // quitting — recording and transcription keep running in the
+            // background. The tray icon or a Dock click bring it back;
+            // Cmd+Q or the tray's Quit actually exit.
             if window.label() == "main" {
-                if let tauri::WindowEvent::Destroyed = event {
-                    window.app_handle().exit(0);
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    api.prevent_close();
+                    let _ = window.hide();
                 }
             }
         })

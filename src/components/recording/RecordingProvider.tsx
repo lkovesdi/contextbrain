@@ -439,7 +439,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         void stopRef.current();
       } else if (m?.type === "open") {
         const s = sessionRef.current;
-        if (s) router.push(`/meetings/${s.meetingId}`);
+        if (s) router.push(`/meetings/${s.meetingId}?continue=1`);
       } else if (m?.type === "hello") {
         // Widget just mounted and wants the current state.
         bc.postMessage({ type: "state", session: sessionRef.current });
@@ -463,7 +463,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     w.__cbRecordingStop = () => void stopRef.current();
     w.__cbRecordingOpen = () => {
       const s = sessionRef.current;
-      if (s) router.push(`/meetings/${s.meetingId}`);
+      if (s) router.push(`/meetings/${s.meetingId}?continue=1`);
     };
     return () => {
       delete w.__cbRecordingStop;

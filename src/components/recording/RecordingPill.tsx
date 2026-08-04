@@ -42,7 +42,7 @@ export function RecordingPill() {
     >
       <button
         type="button"
-        onClick={() => router.push(`/meetings/${session.meetingId}`)}
+        onClick={() => router.push(`/meetings/${session.meetingId}?continue=1`)}
         title="Back to this meeting"
         className="cursor-pointer flex items-center gap-3 min-w-0"
       >
