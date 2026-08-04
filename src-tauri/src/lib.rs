@@ -45,6 +45,7 @@ pub fn run() {
                 let mut tray = TrayIconBuilder::with_id("tray")
                     .menu(&menu)
                     .show_menu_on_left_click(true)
+                    .tooltip("ContextBrain")
                     .on_menu_event(|app, event| match event.id.as_ref() {
                         "open" => {
                             if let Some(main) = app.get_webview_window("main") {
@@ -56,8 +57,13 @@ pub fn run() {
                         "quit" => app.exit(0),
                         _ => {}
                     });
-                if let Some(icon) = app.default_window_icon() {
-                    tray = tray.icon(icon.clone());
+                // Dedicated 18pt@2x template glyph (monochrome, adapts to the
+                // menu bar's light/dark). The full-size window icon rendered
+                // as an invisible/empty status item on macOS 26 — always give
+                // the item real content, with a text fallback just in case.
+                match tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png")) {
+                    Ok(icon) => tray = tray.icon(icon).icon_as_template(true),
+                    Err(_) => tray = tray.title("CB"),
                 }
                 tray.build(app)?;
             }

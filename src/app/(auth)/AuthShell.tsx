@@ -32,7 +32,7 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(90% 90% at 12% 0%, rgba(75,73,230,0.30) 0%, rgba(75,73,230,0) 52%)",
+            "radial-gradient(90% 90% at 12% 0%, color-mix(in srgb, var(--cortex) 30%, transparent) 0%, color-mix(in srgb, var(--cortex) 0%, transparent) 52%)",
         }}
       />
       {/* Gentle darkening behind the form so it stays legible over the field. */}
@@ -49,21 +49,21 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
       <aside className="relative z-10 hidden w-[44%] max-w-[560px] flex-col justify-between p-12 lg:flex">
         <Link href="/" className="flex items-center gap-[10px]">
           <LogoMarkLight size={26} />
-          <span className="font-display text-[26px] leading-none tracking-[-0.015em] text-paper">
+          <span className="font-display text-[26px] leading-none tracking-[-0.015em] text-float-ink">
             ContextBrain
           </span>
         </Link>
 
         <div className="flex flex-col gap-7">
-          <h1 className="font-display text-[44px] leading-[1.05] tracking-[-0.018em] text-paper">
+          <h1 className="font-display text-[44px] leading-[1.05] tracking-[-0.018em] text-float-ink">
             Every meeting,
             <br />
             turned into context
-            <span className="text-cortex-tint-2"> you can use.</span>
+            <span className="text-float-accent"> you can use.</span>
           </h1>
           <ul className="flex flex-col gap-[14px]">
             {BRAND_POINTS.map((point) => (
-              <li key={point} className="flex items-start gap-3 text-[14px] text-mist">
+              <li key={point} className="flex items-start gap-3 text-[14px] text-float-ink-2">
                 <span className="mt-[7px] h-[5px] w-[5px] flex-shrink-0 rounded-full bg-cortex" />
                 {point}
               </li>
@@ -71,17 +71,17 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
           </ul>
         </div>
 
-        <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-slate-2">
+        <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-float-ink-3">
           Futuristic, but calm.
         </p>
       </aside>
 
       {/* Form panel */}
       <section className="relative z-10 flex flex-1 flex-col items-center justify-center px-6 py-12">
-        <div className="flex w-full max-w-[400px] flex-col gap-8 rounded-[16px] border border-white/10 bg-white/[0.03] p-8 backdrop-blur-md">
+        <div className="flex w-full max-w-[400px] flex-col gap-8 rounded-[16px] border border-float-border bg-float-ink/[0.03] p-8 backdrop-blur-md">
           <Link href="/" className="flex items-center gap-[10px] lg:hidden">
             <LogoMarkLight size={24} />
-            <span className="font-display text-[24px] leading-none tracking-[-0.015em] text-paper">
+            <span className="font-display text-[24px] leading-none tracking-[-0.015em] text-float-ink">
               ContextBrain
             </span>
           </Link>

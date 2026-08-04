@@ -293,7 +293,7 @@ function ChatMsg({ msg, streaming }: { msg: Msg; streaming: boolean }) {
         <span
           className={[
             "w-[14px] h-[14px] rounded-full grid place-content-center text-[9px]",
-            isUser ? "bg-paper-2 text-ink" : "bg-cortex text-white",
+            isUser ? "bg-paper-2 text-ink" : "bg-cortex text-on-accent",
           ].join(" ")}
         >
           {isUser ? "Y" : "●"}

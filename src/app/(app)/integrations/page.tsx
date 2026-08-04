@@ -5,6 +5,8 @@ import { getToolkitLogos } from "@/lib/composio";
 
 export const dynamic = "force-dynamic";
 
+// `bg` is each provider's official brand color for the fallback logo chip —
+// brand-constant art, deliberately kept as hex rather than theme tokens.
 const PROVIDERS = [
   {
     id: "github",

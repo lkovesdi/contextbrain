@@ -60,7 +60,7 @@ const TrashIcon = forwardRef<AnimatedIconHandle, TrashIconProps>(
 
       await animate(
         ".trash-icon",
-        { stroke: "#ef4444" },
+        { stroke: "var(--pulse)" },
         { duration: 0.2, delay: 0.1, ease: "easeInOut" },
       );
     }, [animate, dangerHover]);

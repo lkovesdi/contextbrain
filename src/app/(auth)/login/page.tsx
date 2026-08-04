@@ -68,10 +68,10 @@ export default function LoginPage() {
   return (
     <AuthShell>
       <div className="flex flex-col gap-2">
-        <h2 className="font-display text-[32px] leading-[1.1] tracking-[-0.015em] text-paper">
+        <h2 className="font-display text-[32px] leading-[1.1] tracking-[-0.015em] text-float-ink">
           Welcome back
         </h2>
-        <p className="m-0 text-[14px] text-mist">
+        <p className="m-0 text-[14px] text-float-ink-2">
           Sign in with a one-time code — no password to remember.
         </p>
       </div>
@@ -80,7 +80,7 @@ export default function LoginPage() {
         <form onSubmit={verify} className="flex flex-col gap-4">
           <div className="rounded-[8px] border border-echo/40 bg-echo/10 p-4 text-[13px] text-echo-tint">
             We sent a 6-digit code to{" "}
-            <span className="font-medium text-paper">{email}</span>. Enter it
+            <span className="font-medium text-float-ink">{email}</span>. Enter it
             below.
           </div>
           <Input
@@ -110,7 +110,7 @@ export default function LoginPage() {
           <button
             type="button"
             onClick={resetEmail}
-            className="cursor-pointer self-start text-[13px] text-mist transition-colors hover:text-paper"
+            className="cursor-pointer self-start text-[13px] text-float-ink-2 transition-colors hover:text-float-ink"
           >
             Use a different email
           </button>
@@ -140,11 +140,11 @@ export default function LoginPage() {
         </form>
       )}
 
-      <p className="m-0 text-[13px] text-mist">
+      <p className="m-0 text-[13px] text-float-ink-2">
         New here?{" "}
         <Link
           href="/signup"
-          className="cursor-pointer font-medium text-cortex-tint-2 hover:text-paper"
+          className="cursor-pointer font-medium text-float-accent hover:text-float-ink"
         >
           Create an organization
         </Link>
@@ -153,11 +153,11 @@ export default function LoginPage() {
       {process.env.NODE_ENV !== "production" && (
         <form
           action={devSignIn}
-          className="mt-2 border-t border-white/10 pt-4"
+          className="mt-2 border-t border-float-border pt-4"
         >
           <button
             type="submit"
-            className="cursor-pointer text-[12px] uppercase tracking-[0.08em] text-mist hover:text-paper"
+            className="cursor-pointer text-[12px] uppercase tracking-[0.08em] text-float-ink-2 hover:text-float-ink"
           >
             Dev sign in (skip code)
           </button>

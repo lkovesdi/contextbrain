@@ -11,6 +11,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Checkbox } from "@/components/ui/Checkbox";
 import { ConfirmProvider, useConfirm } from "@/components/ui/ConfirmModal";
 import { Eyebrow } from "@/components/ui/typography";
+import { ThemeSelect } from "@/components/ui/ThemeSelect";
 
 type KeyProvider = "anthropic" | "deepgram";
 
@@ -28,6 +29,19 @@ function SettingsInner({ initial }: { initial: SettingsStatus }) {
 
   return (
     <div className="flex flex-col gap-[26px]">
+      <section>
+        <Eyebrow className="mb-[10px]">Appearance</Eyebrow>
+        <Card className="flex items-center justify-between gap-4 p-[16px]">
+          <div>
+            <div className="text-[14px] font-medium text-ink">Theme</div>
+            <p className="m-0 mt-[2px] text-[12.5px] text-slate">
+              System follows your OS setting.
+            </p>
+          </div>
+          <ThemeSelect />
+        </Card>
+      </section>
+
       <section>
         <Eyebrow className="mb-[10px]">API keys</Eyebrow>
         <div className="flex flex-col gap-[14px]">

@@ -15,19 +15,22 @@ function loadMermaid() {
         securityLevel: "loose",
         theme: "base",
         themeVariables: {
-          // Calm — pulled from our design tokens so diagrams blend with the
-          // surrounding markdown instead of shouting in mermaid pink.
+          // SANCTIONED: mermaid bakes these into the SVG it generates, so they
+          // must be literal values — classes and var() tokens can't reach the
+          // renderer. Each hex mirrors a light-theme design token (named
+          // alongside) so diagrams blend with the surrounding markdown instead
+          // of shouting in mermaid pink.
           fontFamily: "Geist, ui-sans-serif, system-ui, sans-serif",
-          background: "#FFFFFF",
-          primaryColor: "#E7E7FB",
-          primaryTextColor: "#1B1A85",
-          primaryBorderColor: "#4B49E6",
-          secondaryColor: "#F8F7F4",
-          tertiaryColor: "#ECEBE6",
-          lineColor: "#5A5B62",
-          textColor: "#14151A",
-          mainBkg: "#E7E7FB",
-          edgeLabelBackground: "#FFFFFF",
+          background: "#FFFFFF", // bone-2
+          primaryColor: "#E7E7FB", // cortex-tint
+          primaryTextColor: "#1B1A85", // cortex-ink
+          primaryBorderColor: "#4B49E6", // cortex
+          secondaryColor: "#F8F7F4", // bone
+          tertiaryColor: "#ECEBE6", // paper-2
+          lineColor: "#5A5B62", // slate
+          textColor: "#14151A", // ink
+          mainBkg: "#E7E7FB", // cortex-tint
+          edgeLabelBackground: "#FFFFFF", // bone-2
         },
       });
       return mermaid;

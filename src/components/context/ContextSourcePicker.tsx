@@ -544,7 +544,7 @@ function ChildrenView({
         <button
           onClick={onAddCurrent}
           disabled={adding !== null}
-          className="flex items-center gap-1 px-2 py-[4px] rounded-[4px] text-[11px] font-medium text-white bg-cortex hover:bg-cortex-hover cursor-pointer flex-shrink-0 disabled:opacity-50"
+          className="flex items-center gap-1 px-2 py-[4px] rounded-[4px] text-[11px] font-medium text-on-accent bg-cortex hover:bg-cortex-hover cursor-pointer flex-shrink-0 disabled:opacity-50"
         >
           <Plus size={10} strokeWidth={1.6} />
           {provider.childrenAreRecursive && path
@@ -611,7 +611,7 @@ function ChildrenView({
                     "opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50",
                     child.isNavigable
                       ? "text-ink-2 bg-bone-2 border-mist hover:bg-paper-2"
-                      : "text-white bg-cortex border-cortex hover:bg-cortex-hover",
+                      : "text-on-accent bg-cortex border-cortex hover:bg-cortex-hover",
                   ].join(" ")}
                 >
                   <Plus size={10} strokeWidth={1.6} />
@@ -732,7 +732,7 @@ function ModeView({
                 <button
                   onClick={() => onAdd(item)}
                   disabled={adding !== null}
-                  className="flex items-center gap-1 px-2 py-[3px] rounded-[4px] text-[10.5px] font-medium border text-white bg-cortex border-cortex hover:bg-cortex-hover opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
+                  className="flex items-center gap-1 px-2 py-[3px] rounded-[4px] text-[10.5px] font-medium border text-on-accent bg-cortex border-cortex hover:bg-cortex-hover opacity-0 group-hover:opacity-100 transition-opacity disabled:opacity-50"
                 >
                   <Plus size={10} strokeWidth={1.6} />
                   Add

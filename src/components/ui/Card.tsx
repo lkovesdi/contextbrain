@@ -4,7 +4,7 @@ type CardVariant = "light" | "dark";
 
 const CARD_VARIANT: Record<CardVariant, string> = {
   light: "bg-bone-2 border border-mist",
-  dark: "bg-white/[0.03] border border-white/10",
+  dark: "bg-float-ink/[0.03] border border-float-border",
 };
 
 export function Card({

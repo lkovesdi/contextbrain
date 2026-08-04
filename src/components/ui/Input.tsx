@@ -22,7 +22,7 @@ export const Input = React.forwardRef<HTMLInputElement, Props>(function Input(
         <span
           className={[
             "text-[12px] font-medium",
-            dark ? "text-mist" : "text-ink-2",
+            dark ? "text-float-ink-2" : "text-ink-2",
           ].join(" ")}
         >
           {label}
@@ -33,15 +33,15 @@ export const Input = React.forwardRef<HTMLInputElement, Props>(function Input(
         id={inputId}
         className={[
           "w-full rounded-[6px] px-3 py-[9px] text-[13px]",
-          dark ? "text-paper placeholder:text-slate-2" : "text-ink",
+          dark ? "text-float-ink placeholder:text-float-ink-3" : "text-ink",
           "border outline-none transition-shadow duration-[120ms] ease-[var(--ease-out)]",
           "focus:border-transparent focus:[box-shadow:0_0_0_3px_var(--cortex-tint),inset_0_0_0_1px_var(--cortex)]",
           error
             ? dark
-              ? "bg-white/[0.04] border-pulse"
-              : "bg-[#FBF3F1] border-pulse"
+              ? "bg-float-ink/[0.04] border-pulse"
+              : "bg-pulse-tint border-pulse"
             : dark
-              ? "bg-white/[0.04] border-white/15"
+              ? "bg-float-ink/[0.04] border-float-border"
               : "bg-bone-2 border-mist",
           className,
         ].join(" ")}
@@ -51,7 +51,7 @@ export const Input = React.forwardRef<HTMLInputElement, Props>(function Input(
         <span
           className={[
             "font-mono text-[10px] uppercase tracking-[0.07em]",
-            error ? "text-pulse" : "text-slate-2",
+            error ? "text-pulse" : dark ? "text-float-ink-3" : "text-slate-2",
           ].join(" ")}
         >
           {error || hint}

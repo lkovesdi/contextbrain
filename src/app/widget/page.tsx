@@ -78,19 +78,19 @@ export default function RecordingWidget() {
       <style>{`html, body { background: transparent !important; }`}</style>
       <div
         data-tauri-drag-region
-        className="fixed inset-0 flex items-center gap-3 rounded-[16px] border border-[rgba(255,255,255,0.12)] bg-[#16171d] pl-4 pr-2 shadow-[0_12px_36px_rgba(0,0,0,0.45)] select-none"
+        className="fixed inset-0 flex items-center gap-3 rounded-[16px] border border-float-border bg-float pl-4 pr-2 shadow-[0_12px_36px_rgba(0,0,0,0.45)] select-none"
       >
         <span className="pointer-events-none relative flex h-[8px] w-[8px] flex-shrink-0">
           <span className="absolute inline-flex h-full w-full rounded-full bg-pulse opacity-60 [animation:mb-pulse_1.4s_infinite]" />
           <span className="relative inline-flex h-[8px] w-[8px] rounded-full bg-pulse" />
         </span>
         <span className="pointer-events-none">
-          <MiniWaveform active={!!session} levelRef={levelRef} barClassName="bg-white/80" />
+          <MiniWaveform active={!!session} levelRef={levelRef} barClassName="bg-float-ink" />
         </span>
-        <span className="pointer-events-none font-mono text-[12px] tabular-nums text-white/75">
+        <span className="pointer-events-none font-mono text-[12px] tabular-nums text-float-ink-2">
           {session ? formatElapsed(session.startedAt, now) : "–:––"}
         </span>
-        <span className="pointer-events-none min-w-0 flex-1 truncate text-[12.5px] text-white/90">
+        <span className="pointer-events-none min-w-0 flex-1 truncate text-[12.5px] text-float-ink">
           {session ? session.title : "Waiting for recording…"}
         </span>
         <button
@@ -103,7 +103,7 @@ export default function RecordingWidget() {
             tauriInvoke("focus_main");
             bcRef.current?.postMessage({ type: "open" });
           }}
-          className="cursor-pointer flex h-[28px] w-[28px] flex-shrink-0 items-center justify-center rounded-full border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.06)] text-white/85 transition-colors duration-[120ms] hover:bg-[rgba(255,255,255,0.14)]"
+          className="cursor-pointer flex h-[28px] w-[28px] flex-shrink-0 items-center justify-center rounded-full border border-float-border bg-float-ink/5 text-float-ink transition-colors duration-[120ms] hover:bg-float-ink/15"
         >
           <ArrowUpRight size={13} strokeWidth={1.8} />
         </button>
@@ -115,7 +115,7 @@ export default function RecordingWidget() {
             tauriInvoke("widget_stop");
             bcRef.current?.postMessage({ type: "stop" });
           }}
-          className="cursor-pointer flex h-[28px] w-[28px] flex-shrink-0 items-center justify-center rounded-full bg-pulse/90 text-white transition-colors duration-[120ms] hover:bg-pulse"
+          className="cursor-pointer flex h-[28px] w-[28px] flex-shrink-0 items-center justify-center rounded-full bg-pulse/90 text-on-accent transition-colors duration-[120ms] hover:bg-pulse"
         >
           <Square size={10} strokeWidth={0} fill="currentColor" />
         </button>

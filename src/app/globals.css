@@ -46,6 +46,23 @@
   --amber-tint:     #F4E6CC;
   --amber-ink:      #6B4310;
 
+  /* ----- COLOR / Float — dark floating chrome (recording pill, desktop
+     widget, controls over the diagram canvas). Dark in both themes; the
+     dark theme lifts it above the page background. ----- */
+  --float:          #16171D;
+  --float-2:        #23242C;
+  --float-border:   rgba(255, 255, 255, 0.10);
+  --float-ink:      rgba(255, 255, 255, 0.92);
+  --float-ink-2:    rgba(255, 255, 255, 0.70);
+  --float-ink-3:    rgba(255, 255, 255, 0.48);
+  --float-accent:   #C9C8F4;
+
+  /* ----- COLOR / On-accent — text & icons on filled accent surfaces
+     (cortex/pulse buttons). Constant across themes. ----- */
+  --on-accent:      #FFFFFF;
+
+  color-scheme: light;
+
   /* ----- TYPOGRAPHY / Families ----- */
   --font-display:   var(--font-instrument-serif), "Iowan Old Style", Georgia, serif;
   --font-sans:      var(--font-geist-sans), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -118,6 +135,63 @@ html[data-desktop="mac"] {
   --titlebar-inset: 28px;
 }
 
+/* ============================================================
+   DARK THEME — stamped pre-hydration as html[data-theme="dark"]
+   by the root layout script (localStorage "cb_theme": light |
+   dark | system; system follows prefers-color-scheme). The ramp
+   mirrors light: paper = page, bone = raised card, ink = text.
+   ============================================================ */
+html[data-theme="dark"] {
+  --paper:          #131318;
+  --paper-2:        #17181E;
+  --bone:           #1B1C23;
+  --bone-2:         #22232B;
+  --mist:           #2B2C35;
+  --mist-2:         #3C3D48;
+
+  --ink:            #ECECF1;
+  --ink-2:          #C9CAD3;
+  --slate:          #9C9DA8;
+  --slate-2:        #73747F;
+  --slate-3:        #50515A;
+
+  --cortex:         #7B79FF;
+  --cortex-hover:   #908EFF;
+  --cortex-press:   #6A68F0;
+  --cortex-tint:    #262649;
+  --cortex-tint-2:  #34346B;
+  --cortex-ink:     #C6C5FF;
+
+  --pulse:          #E06055;
+  --pulse-tint:     #3A2421;
+  --pulse-ink:      #F0ABA3;
+
+  --echo:           #4CB183;
+  --echo-tint:      #1C2F26;
+  --echo-ink:       #A0D9BE;
+
+  --amber:          #D99C48;
+  --amber-tint:     #342A1B;
+  --amber-ink:      #E9C896;
+
+  --float:          #23242C;
+  --float-border:   rgba(255, 255, 255, 0.14);
+
+  --shadow-0: 0 0 0 1px var(--mist);
+  --shadow-1: 0 1px 0 rgba(0,0,0,0.20), 0 0 0 1px var(--mist);
+  --shadow-2: 0 1px 2px rgba(0,0,0,0.30), 0 2px 6px rgba(0,0,0,0.22),
+              0 0 0 1px var(--mist);
+  --shadow-3: 0 4px 14px rgba(0,0,0,0.40), 0 1px 3px rgba(0,0,0,0.28),
+              0 0 0 1px var(--mist);
+  --shadow-4: 0 24px 48px -12px rgba(0,0,0,0.55), 0 8px 16px -8px rgba(0,0,0,0.35),
+              0 0 0 1px var(--mist);
+
+  color-scheme: dark;
+}
+
+/* Tailwind `dark:` utilities follow the stamped attribute, not the OS. */
+@custom-variant dark (&:where(html[data-theme="dark"], html[data-theme="dark"] *));
+
 @theme inline {
   --color-paper: var(--paper);
   --color-paper-2: var(--paper-2);
@@ -145,6 +219,14 @@ html[data-desktop="mac"] {
   --color-amber: var(--amber);
   --color-amber-tint: var(--amber-tint);
   --color-amber-ink: var(--amber-ink);
+  --color-float: var(--float);
+  --color-float-2: var(--float-2);
+  --color-float-border: var(--float-border);
+  --color-float-ink: var(--float-ink);
+  --color-float-ink-2: var(--float-ink-2);
+  --color-float-ink-3: var(--float-ink-3);
+  --color-float-accent: var(--float-accent);
+  --color-on-accent: var(--on-accent);
 
   --font-display: var(--font-display);
   --font-sans: var(--font-sans);

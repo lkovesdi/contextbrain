@@ -13,7 +13,7 @@ const MINI_BASE_PX = 2;
 export function MiniWaveform({
   active,
   levelRef,
-  barClassName = "bg-white",
+  barClassName = "bg-on-accent",
 }: {
   active: boolean;
   levelRef: { current: number };

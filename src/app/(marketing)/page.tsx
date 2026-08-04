@@ -51,26 +51,26 @@ export default async function LandingPage() {
         className="pointer-events-none absolute inset-0 -z-10"
         style={{
           background:
-            "radial-gradient(120% 90% at 50% 16%, rgba(20,21,26,0) 0%, rgba(20,21,26,0.55) 50%, var(--ink) 90%)",
+            "radial-gradient(120% 90% at 50% 16%, rgba(20,21,26,0) 0%, rgba(20,21,26,0.55) 50%, #14151A 90%)",
         }}
       />
       <header className="flex items-center justify-between px-6 py-5 sm:px-10">
         <span className="flex items-center gap-[10px]">
           <LogoMarkLight size={24} />
-          <span className="font-display text-[24px] leading-none tracking-[-0.015em] text-paper">
+          <span className="font-display text-[24px] leading-none tracking-[-0.015em] text-float-ink">
             ContextBrain
           </span>
         </span>
         <nav className="flex items-center gap-2">
           <Link
             href="/login"
-            className="cursor-pointer rounded-[8px] px-[14px] py-[9px] text-[14px] font-medium text-mist transition-colors hover:bg-white/5 hover:text-paper"
+            className="cursor-pointer rounded-[8px] px-[14px] py-[9px] text-[14px] font-medium text-float-ink-2 transition-colors hover:bg-float-ink/5 hover:text-float-ink"
           >
             Sign in
           </Link>
           <Link
             href="/signup"
-            className="cursor-pointer rounded-[8px] bg-cortex px-[16px] py-[10px] text-[14px] font-medium text-white transition-colors hover:bg-cortex-hover"
+            className="cursor-pointer rounded-[8px] bg-cortex px-[16px] py-[10px] text-[14px] font-medium text-on-accent transition-colors hover:bg-cortex-hover"
           >
             Get started
           </Link>
@@ -80,29 +80,29 @@ export default async function LandingPage() {
       <main className="flex flex-1 flex-col">
         <section className="mx-auto flex w-full max-w-[920px] flex-col items-center px-6 pb-16 pt-16 text-center sm:pt-24">
           <Eyebrow>Meeting intelligence for teams</Eyebrow>
-          <h1 className="mt-5 max-w-[760px] font-display text-[clamp(44px,7vw,72px)] leading-[1.02] tracking-[-0.02em] text-paper">
+          <h1 className="mt-5 max-w-[760px] font-display text-[clamp(44px,7vw,72px)] leading-[1.02] tracking-[-0.02em] text-float-ink">
             Every meeting, turned into
-            <span className="text-cortex-tint-2"> context you can use.</span>
+            <span className="text-float-accent"> context you can use.</span>
           </h1>
-          <p className="mt-6 max-w-[560px] text-[17px] leading-[1.55] text-mist">
+          <p className="mt-6 max-w-[560px] text-[17px] leading-[1.55] text-float-ink-2">
             Record, summarize, and chat with your meetings — then bring in the docs, tickets, and
             code that give them meaning. Set up your organization in under a minute.
           </p>
           <div className="mt-9 flex flex-col items-center gap-3 sm:flex-row">
             <Link
               href="/signup"
-              className="cursor-pointer rounded-[8px] bg-cortex px-[22px] py-[13px] text-[15px] font-medium text-white transition-colors hover:bg-cortex-hover"
+              className="cursor-pointer rounded-[8px] bg-cortex px-[22px] py-[13px] text-[15px] font-medium text-on-accent transition-colors hover:bg-cortex-hover"
             >
               Create your organization
             </Link>
             <Link
               href="/login"
-              className="cursor-pointer rounded-[8px] border border-white/15 bg-white/5 px-[22px] py-[13px] text-[15px] font-medium text-paper transition-colors hover:bg-white/10"
+              className="cursor-pointer rounded-[8px] border border-float-border bg-float-ink/5 px-[22px] py-[13px] text-[15px] font-medium text-float-ink transition-colors hover:bg-float-ink/10"
             >
               Sign in
             </Link>
           </div>
-          <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.07em] text-slate-2">
+          <p className="mt-4 font-mono text-[11px] uppercase tracking-[0.07em] text-float-ink-3">
             Work email required · No credit card
           </p>
         </section>
@@ -113,17 +113,17 @@ export default async function LandingPage() {
               <span className="flex h-9 w-9 items-center justify-center rounded-[8px] bg-cortex-tint text-cortex">
                 <Icon size={18} strokeWidth={1.7} />
               </span>
-              <h3 className="font-display text-[20px] leading-[1.2] tracking-[-0.01em] text-paper">
+              <h3 className="font-display text-[20px] leading-[1.2] tracking-[-0.01em] text-float-ink">
                 {title}
               </h3>
-              <p className="m-0 text-[14px] leading-[1.55] text-mist">{body}</p>
+              <p className="m-0 text-[14px] leading-[1.55] text-float-ink-2">{body}</p>
             </Card>
           ))}
         </section>
       </main>
 
-      <footer className="border-t border-white/10 px-6 py-6 sm:px-10">
-        <p className="m-0 font-mono text-[11px] uppercase tracking-[0.07em] text-slate-2">
+      <footer className="border-t border-float-border px-6 py-6 sm:px-10">
+        <p className="m-0 font-mono text-[11px] uppercase tracking-[0.07em] text-float-ink-3">
           ContextBrain · Futuristic, but calm
         </p>
       </footer>

@@ -306,7 +306,7 @@ function CreateForm({
         <button
           onClick={() => onCreate(name)}
           disabled={busy || !name.trim()}
-          className="px-[10px] py-[3px] rounded-[5px] text-[11.5px] text-white bg-ink hover:opacity-90 border-0 cursor-pointer disabled:opacity-50"
+          className="px-[10px] py-[3px] rounded-[5px] text-[11.5px] text-paper bg-ink hover:opacity-90 border-0 cursor-pointer disabled:opacity-50"
         >
           {busy ? "Creating…" : "Create & file"}
         </button>

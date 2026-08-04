@@ -87,10 +87,10 @@ export default function SignupPage() {
   return (
     <AuthShell>
       <div className="flex flex-col gap-2">
-        <h2 className="font-display text-[32px] leading-[1.1] tracking-[-0.015em] text-paper">
+        <h2 className="font-display text-[32px] leading-[1.1] tracking-[-0.015em] text-float-ink">
           Create your organization
         </h2>
-        <p className="m-0 text-[14px] text-mist">
+        <p className="m-0 text-[14px] text-float-ink-2">
           Start with your work email. We&apos;ll set up your workspace once you confirm it.
         </p>
       </div>
@@ -99,12 +99,12 @@ export default function SignupPage() {
         <form onSubmit={verify} className="flex flex-col gap-4">
           <div className="rounded-[8px] border border-echo/40 bg-echo/10 p-4 text-[13px] text-echo-tint">
             We sent a 6-digit code to{" "}
-            <span className="font-medium text-paper">{email}</span>. Enter it
+            <span className="font-medium text-float-ink">{email}</span>. Enter it
             below to continue.
           </div>
           {existingOrg && (
-            <div className="rounded-[8px] border border-white/10 bg-white/[0.03] p-4 text-[13px] text-mist">
-              <span className="font-medium text-paper">{existingOrg.name}</span> is already on
+            <div className="rounded-[8px] border border-float-border bg-float-ink/[0.03] p-4 text-[13px] text-float-ink-2">
+              <span className="font-medium text-float-ink">{existingOrg.name}</span> is already on
               ContextBrain
               {existingOrg.memberCount > 0 && (
                 <> ({existingOrg.memberCount} member{existingOrg.memberCount === 1 ? "" : "s"})</>
@@ -139,7 +139,7 @@ export default function SignupPage() {
           <button
             type="button"
             onClick={resetEmail}
-            className="cursor-pointer self-start text-[13px] text-mist transition-colors hover:text-paper"
+            className="cursor-pointer self-start text-[13px] text-float-ink-2 transition-colors hover:text-float-ink"
           >
             Use a different email
           </button>
@@ -178,11 +178,11 @@ export default function SignupPage() {
         </form>
       )}
 
-      <p className="m-0 text-[13px] text-mist">
+      <p className="m-0 text-[13px] text-float-ink-2">
         Already have an account?{" "}
         <Link
           href="/login"
-          className="cursor-pointer font-medium text-cortex-tint-2 hover:text-paper"
+          className="cursor-pointer font-medium text-float-accent hover:text-float-ink"
         >
           Sign in
         </Link>

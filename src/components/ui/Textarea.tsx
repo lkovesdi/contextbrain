@@ -24,7 +24,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, Props>(
             "w-full rounded-[6px] px-3 py-[9px] text-[13px] text-ink leading-[1.5] resize-y",
             "border outline-none transition-shadow duration-[120ms] ease-[var(--ease-out)]",
             error
-              ? "bg-[#FBF3F1] border-pulse"
+              ? "bg-pulse-tint border-pulse"
               : "bg-bone-2 border-mist focus:border-transparent focus:[box-shadow:0_0_0_3px_var(--cortex-tint),inset_0_0_0_1px_var(--cortex)]",
             className,
           ].join(" ")}

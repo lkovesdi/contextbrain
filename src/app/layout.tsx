@@ -36,18 +36,20 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} ${instrumentSerif.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        {/* The same deployed frontend serves web and the Tauri desktop shell,
-            so desktop detection must happen at runtime. Tauri's init script
-            (window.isTauri) runs before page scripts, and this inline script
-            runs before first paint — the titlebar inset applies with no jump.
-            The MutationObserver guards the attribute afterwards: when React
-            recovers from a hydration mismatch it client-re-renders the root
-            and strips attributes it didn't render onto <html>, which silently
-            removed data-desktop (and the titlebar inset with it). Re-stamping
-            on removal keeps the inset alive no matter what hydration does. */}
+        {/* Pre-paint environment stamps on <html>:
+            - data-desktop="mac" inside the Tauri shell (drives the titlebar
+              inset), detected via Tauri's injected globals.
+            - data-theme="dark" from localStorage cb_theme (light|dark|system;
+              system follows prefers-color-scheme) — before first paint, so
+              no light flash.
+            The MutationObserver guards both: React hydration-mismatch
+            recovery client-re-renders the root and strips attributes it
+            didn't render onto <html>; re-stamping (idempotently, so the
+            observer can't loop) keeps them alive no matter what hydration
+            does. window.__cbApplyTheme lets the Settings toggle re-resolve. */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `try{if((window.isTauri||window.__TAURI_INTERNALS__)&&/Mac/.test(navigator.userAgent)){var d=document.documentElement;d.setAttribute("data-desktop","mac");new MutationObserver(function(){if(d.getAttribute("data-desktop")!=="mac")d.setAttribute("data-desktop","mac")}).observe(d,{attributes:true,attributeFilter:["data-desktop"]})}}catch(e){}`,
+            __html: `try{var d=document.documentElement;var set=function(n,v){if(v===null){if(d.hasAttribute(n))d.removeAttribute(n)}else if(d.getAttribute(n)!==v)d.setAttribute(n,v)};var desktop=(window.isTauri||window.__TAURI_INTERNALS__)&&/Mac/.test(navigator.userAgent);var mq=window.matchMedia("(prefers-color-scheme: dark)");var apply=function(){set("data-desktop",desktop?"mac":null);var p=null;try{p=localStorage.getItem("cb_theme")}catch(e){}var dark=p==="dark"||(p!=="light"&&mq.matches);set("data-theme",dark?"dark":null)};apply();window.__cbApplyTheme=apply;mq.addEventListener("change",apply);new MutationObserver(apply).observe(d,{attributes:true,attributeFilter:["data-desktop","data-theme"]})}catch(e){}`,
           }}
         />
         {children}

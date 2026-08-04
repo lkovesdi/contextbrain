@@ -225,7 +225,7 @@ function ChatImage({
           ].join(" ")}
         />
         {isPinned && loader.state === "loaded" && (
-          <span className="absolute top-1 right-1 px-[6px] py-[1px] rounded-full bg-cortex text-white font-mono text-[9px] uppercase tracking-[0.07em] pointer-events-none">
+          <span className="absolute top-1 right-1 px-[6px] py-[1px] rounded-full bg-cortex text-on-accent font-mono text-[9px] uppercase tracking-[0.07em] pointer-events-none">
             in summary
           </span>
         )}

@@ -15,8 +15,8 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # macos-private-api: needed for the transparent floating recording widget
 # window (WKWebView transparency is a private API behind this flag).
-# tray-icon: menu bar icon while the app runs in the background.
-tauri = { version = "2", features = ["macos-private-api", "tray-icon"] }
+# tray-icon + image-png: menu bar icon while the app runs in the background.
+tauri = { version = "2", features = ["macos-private-api", "tray-icon", "image-png"] }
 # Captures `contextbrain://...` callback URLs after Supabase / Composio
 # magic-link redirects. Wired into the renderer in Phase 2.
 tauri-plugin-deep-link = "2"

@@ -207,7 +207,7 @@ function ProgressRing({
         />
       </svg>
       {ready && (
-        <span className="absolute inset-0 grid place-content-center text-white">
+        <span className="absolute inset-0 grid place-content-center text-on-accent">
           <Check size={9} strokeWidth={2.4} />
         </span>
       )}

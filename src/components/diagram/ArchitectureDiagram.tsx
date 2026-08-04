@@ -59,7 +59,7 @@ const ICON_META: Record<DiagramIcon, { icon: LucideIcon; color: string }> = {
   external:  { icon: Plug,          color: "#93C5FD" },
 };
 
-const TONE_COLOR: Record<GroupTone, string> = {
+export const TONE_COLOR: Record<GroupTone, string> = {
   neutral: "#94A3B8",
   cortex:  "#8B8AF0",
   violet:  "#C084FC",
@@ -68,17 +68,22 @@ const TONE_COLOR: Record<GroupTone, string> = {
   red:     "#F87171",
 };
 
-const STATUS_COLOR = { added: "#4ADE80", removed: "#F87171", modified: "#FBBF24" } as const;
+export const STATUS_COLOR = { added: "#4ADE80", removed: "#F87171", modified: "#FBBF24" } as const;
 
 const ZOOM_BTN =
-  "cursor-pointer flex h-[28px] w-[28px] items-center justify-center rounded-[8px] border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.06)] text-[#C9CBD4] transition-colors duration-[120ms] ease-[var(--ease-out)] hover:bg-[rgba(255,255,255,0.12)]";
+  "cursor-pointer flex h-[28px] w-[28px] items-center justify-center rounded-[8px] border border-float-border bg-float-ink/5 text-float-ink-2 transition-colors duration-[120ms] ease-[var(--ease-out)] hover:bg-float-ink/15";
 
 const CELL_W = 170;
 const CELL_H = 138;
 const PAD = 72;
 const TILE = 54;
 
-const CANVAS_BG = "#111217";
+// SANCTIONED DIAGRAM PALETTE — the canvas is deliberately dark in BOTH themes
+// (see the note at the top of this file), so CANVAS_BG and every color painted
+// INSIDE the SVG (ICON_META, TONE_COLOR, STATUS_COLOR, the dot pattern, edge
+// stroke rgba values, text fills) are data-viz constants, not theme tokens.
+// Exported so the workbench's empty-state placeholder can match it exactly.
+export const CANVAS_BG = "#111217";
 
 function rgba(hex: string, alpha: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -278,11 +283,11 @@ export function ArchitectureDiagram({
     <div
       ref={containerRef}
       className={[
-        "relative overflow-hidden rounded-[14px] border border-mist bg-[#111217]",
+        "relative overflow-hidden rounded-[14px] border border-mist",
         dragging ? "cursor-grabbing" : "cursor-grab",
         className,
       ].join(" ")}
-      style={{ height }}
+      style={{ height, background: CANVAS_BG }}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
         // Clicks on the zoom controls must not start a pan — capturing the

@@ -6,7 +6,17 @@ import { useEffect, useRef, useState } from "react";
 import { Check, GitBranch, Pencil, RefreshCw, Workflow, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
-import { ArchitectureDiagram, type DiagramHighlight } from "@/components/diagram/ArchitectureDiagram";
+import {
+  ArchitectureDiagram,
+  CANVAS_BG,
+  STATUS_COLOR,
+  TONE_COLOR,
+  type DiagramHighlight,
+} from "@/components/diagram/ArchitectureDiagram";
+
+// Sanctioned diagram-palette literal: the async/deploy legend swatch matches
+// the muted dashed strokes drawn inside the always-dark canvas.
+const LEGEND_MUTED = "#9CA0AD";
 import {
   diffGraphs,
   type DiagramRow,
@@ -273,21 +283,24 @@ export function DiagramWorkbench({
 
       {/* Canvas */}
       {versions.length === 0 ? (
-        <div className="flex h-[560px] flex-col items-center justify-center gap-[14px] rounded-[14px] border border-mist bg-[#111217]">
-          <Workflow size={26} strokeWidth={1.4} className="text-[#8B8AF0]" />
+        <div
+          className="flex h-[560px] flex-col items-center justify-center gap-[14px] rounded-[14px] border border-mist"
+          style={{ background: CANVAS_BG }}
+        >
+          <Workflow size={26} strokeWidth={1.4} style={{ color: TONE_COLOR.cortex }} />
           {generating ? (
             <>
-              <p className="text-[13.5px] text-[#C9CBD4]">
+              <p className="text-[13.5px] text-float-ink-2">
                 Reading {diagram.repos.length === 1 ? "repo" : `${diagram.repos.length} repos`} and
                 drawing the architecture…
               </p>
-              <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-[#6B6E7B] animate-pulse">
+              <p className="font-mono text-[11px] uppercase tracking-[0.08em] text-slate-2 animate-pulse">
                 usually 30–60 seconds
               </p>
             </>
           ) : (
             !genError && (
-              <p className="text-[13.5px] text-[#C9CBD4]">
+              <p className="text-[13.5px] text-float-ink-2">
                 This diagram hasn&apos;t been generated yet.
               </p>
             )
@@ -320,27 +333,27 @@ export function DiagramWorkbench({
       {versions.length > 0 && (
         <div className="flex flex-wrap items-center gap-x-[18px] gap-y-[6px] font-mono text-[10.5px] uppercase tracking-[0.06em] text-slate-2">
           <span className="flex items-center gap-[6px]">
-            <svg width="26" height="8" aria-hidden>
-              <line x1="1" y1="4" x2="25" y2="4" stroke="#8B8AF0" strokeWidth="1.6" strokeDasharray="4 6" />
+            <svg width="26" height="8" aria-hidden style={{ color: TONE_COLOR.cortex }}>
+              <line x1="1" y1="4" x2="25" y2="4" stroke="currentColor" strokeWidth="1.6" strokeDasharray="4 6" />
             </svg>
             data flow
           </span>
           <span className="flex items-center gap-[6px]">
-            <svg width="26" height="8" aria-hidden>
-              <line x1="1" y1="4" x2="25" y2="4" stroke="#9CA0AD" strokeWidth="1.4" strokeDasharray="3 5" />
+            <svg width="26" height="8" aria-hidden style={{ color: LEGEND_MUTED }}>
+              <line x1="1" y1="4" x2="25" y2="4" stroke="currentColor" strokeWidth="1.4" strokeDasharray="3 5" />
             </svg>
             async / deploy
           </span>
           {compare && (
             <>
               <span className="flex items-center gap-[5px]">
-                <span className="h-[8px] w-[8px] rounded-full border border-[#4ADE80]" /> added
+                <span className="h-[8px] w-[8px] rounded-full border" style={{ borderColor: STATUS_COLOR.added }} /> added
               </span>
               <span className="flex items-center gap-[5px]">
-                <span className="h-[8px] w-[8px] rounded-full border border-[#F87171]" /> removed
+                <span className="h-[8px] w-[8px] rounded-full border" style={{ borderColor: STATUS_COLOR.removed }} /> removed
               </span>
               <span className="flex items-center gap-[5px]">
-                <span className="h-[8px] w-[8px] rounded-full border border-[#FBBF24]" /> changed
+                <span className="h-[8px] w-[8px] rounded-full border" style={{ borderColor: STATUS_COLOR.modified }} /> changed
               </span>
             </>
           )}
@@ -359,11 +372,10 @@ export function DiagramWorkbench({
               {sel.changes.map((c, i) => (
                 <li key={i} className="flex items-baseline gap-[8px] text-[12.5px] leading-relaxed">
                   <span
-                    className="relative top-[-1px] h-[7px] w-[7px] shrink-0 rounded-full"
-                    style={{
-                      backgroundColor:
-                        c.kind === "added" ? "#4ADE80" : c.kind === "removed" ? "#F87171" : "#FBBF24",
-                    }}
+                    className={[
+                      "relative top-[-1px] h-[7px] w-[7px] shrink-0 rounded-full",
+                      c.kind === "added" ? "bg-echo" : c.kind === "removed" ? "bg-pulse" : "bg-amber",
+                    ].join(" ")}
                   />
                   <span>
                     <span className="font-medium text-ink">{c.target}</span>{" "}

@@ -44,7 +44,7 @@ export function DownloadCard() {
 
   if (release.kind === "loading") {
     return (
-      <div className="rounded-[12px] border border-white/10 bg-white/[0.03] p-6 text-center text-[14px] text-mist">
+      <div className="rounded-[12px] border border-float-border bg-float-ink/[0.03] p-6 text-center text-[14px] text-float-ink-2">
         Checking for the latest version…
       </div>
     );
@@ -52,9 +52,9 @@ export function DownloadCard() {
 
   if (release.kind === "none") {
     return (
-      <div className="flex flex-col gap-3 rounded-[12px] border border-white/10 bg-white/[0.03] p-6 text-center">
-        <p className="m-0 text-[14px] text-paper">Coming soon.</p>
-        <p className="m-0 text-[12px] text-mist">
+      <div className="flex flex-col gap-3 rounded-[12px] border border-float-border bg-float-ink/[0.03] p-6 text-center">
+        <p className="m-0 text-[14px] text-float-ink">Coming soon.</p>
+        <p className="m-0 text-[12px] text-float-ink-2">
           The Mac app is in private testing. The web app has every feature in the meantime.
         </p>
       </div>
@@ -64,16 +64,16 @@ export function DownloadCard() {
   return (
     <a
       href={release.url}
-      className="group flex cursor-pointer items-center justify-between rounded-[12px] border border-white/10 bg-white/[0.03] p-6 transition-colors hover:bg-white/[0.06]"
+      className="group flex cursor-pointer items-center justify-between rounded-[12px] border border-float-border bg-float-ink/[0.03] p-6 transition-colors hover:bg-float-ink/[0.06]"
     >
       <div className="flex flex-col gap-1 text-left">
-        <span className="text-[15px] font-medium text-paper">
+        <span className="text-[15px] font-medium text-float-ink">
           Download {release.version}
         </span>
-        <span className="text-[12px] text-mist">.dmg · {release.size}</span>
+        <span className="text-[12px] text-float-ink-2">.dmg · {release.size}</span>
       </div>
       <Download
-        className="text-cortex-tint-2 transition-transform group-hover:translate-y-0.5"
+        className="text-float-accent transition-transform group-hover:translate-y-0.5"
         size={22}
       />
     </a>

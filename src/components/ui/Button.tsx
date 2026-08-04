@@ -28,7 +28,7 @@ const ICON_SIZE: Record<Size, string> = {
 
 const VARIANT: Record<Variant, string> = {
   primary:
-    "bg-cortex text-white border border-transparent hover:bg-cortex-hover active:bg-cortex-press",
+    "bg-cortex text-on-accent border border-transparent hover:bg-cortex-hover active:bg-cortex-press",
   ink:
     "bg-ink text-paper border border-transparent hover:bg-ink-2",
   secondary:
@@ -36,7 +36,7 @@ const VARIANT: Record<Variant, string> = {
   ghost:
     "bg-transparent text-ink border border-transparent hover:bg-paper-2",
   danger:
-    "bg-pulse text-white border border-transparent hover:opacity-90",
+    "bg-pulse text-on-accent border border-transparent hover:opacity-90",
   icon:
     "bg-bone-2 text-slate border border-mist hover:bg-paper-2 hover:text-ink",
 };
