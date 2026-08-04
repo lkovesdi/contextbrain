@@ -331,16 +331,22 @@ mod mic_monitor {
 
 // Native macOS drag strip for the frameless ("Overlay") window. With the title
 // bar gone and web content filling the window, there's no native region to grab
-// the window by — so we add a transparent NSView across the top that reports
-// itself as window-movable. macOS then drags the window when the user grabs the
-// top, while the native traffic lights (rendered above everything) still click
-// through. Pure native — no web-side drag region, so it's independent of the
-// remotely-hosted frontend.
+// the window by — so we add a transparent NSView across the top that starts a
+// window drag on mouse-down, while the native traffic lights (rendered above
+// everything) still click through. Pure native — no web-side drag region, so
+// it's independent of the remotely-hosted frontend.
+//
+// The window must NOT be movableByWindowBackground: WKWebView reports most
+// non-interactive page regions as window background, so that flag made
+// click-drags inside app content (panning the diagram canvas, dragging over
+// empty list areas) move the whole window. The strip drags explicitly via
+// performWindowDragWithEvent: instead, and the webview can never move the
+// window.
 #[cfg(target_os = "macos")]
 mod macos_titlebar {
     use objc2::rc::Retained;
     use objc2::{define_class, msg_send, MainThreadMarker, MainThreadOnly};
-    use objc2_app_kit::{NSAutoresizingMaskOptions, NSView, NSWindow};
+    use objc2_app_kit::{NSAutoresizingMaskOptions, NSEvent, NSView, NSWindow};
     use objc2_foundation::{NSPoint, NSRect, NSSize};
 
     define_class!(
@@ -349,11 +355,11 @@ mod macos_titlebar {
         struct DragStrip;
 
         impl DragStrip {
-            // Reporting YES here is what lets macOS move the window when this
-            // strip is dragged (combined with `setMovableByWindowBackground`).
-            #[unsafe(method(mouseDownCanMoveWindow))]
-            fn mouse_down_can_move_window(&self) -> bool {
-                true
+            #[unsafe(method(mouseDown:))]
+            fn mouse_down(&self, event: &NSEvent) {
+                if let Some(window) = self.window() {
+                    window.performWindowDragWithEvent(event);
+                }
             }
         }
     );
@@ -365,7 +371,6 @@ mod macos_titlebar {
         // SAFETY: called on the main thread during `setup`, with the pointer
         // Tauri handed us for the live "main" NSWindow.
         let ns_window: &NSWindow = unsafe { &*(ns_window_ptr as *const NSWindow) };
-        ns_window.setMovableByWindowBackground(true);
 
         let Some(content_view) = ns_window.contentView() else {
             return;
