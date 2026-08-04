@@ -6,6 +6,13 @@
   "permissions": [
     "core:default",
     "deep-link:default",
-    "updater:default"
+    "updater:default",
+    "allow-ping",
+    "allow-start-meeting",
+    "allow-dismiss-popup",
+    "allow-dismiss-update-popup",
+    "allow-restart-app",
+    "allow-pending-update-version",
+    "allow-pending-update-notes"
   ]
 }

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pending-update-version"
+description = "Enables the pending_update_version command without any pre-configured scope."
+commands.allow = ["pending_update_version"]
+
+[[permission]]
+identifier = "deny-pending-update-version"
+description = "Denies the pending_update_version command without any pre-configured scope."
+commands.deny = ["pending_update_version"]

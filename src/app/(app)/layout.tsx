@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { Sidebar } from "./Sidebar";
 import { ConfirmProvider } from "@/components/ui/ConfirmModal";
 import { DesktopAppPrompt } from "@/components/ui/DesktopAppPrompt";
+import { RecordingProvider } from "@/components/recording/RecordingProvider";
 
 export default async function AppLayout({
   children,
@@ -29,13 +30,15 @@ export default async function AppLayout({
 
   return (
     <ConfirmProvider>
-      <div className="flex min-h-screen bg-paper text-ink">
-        <Sidebar userEmail={user.email ?? ""} orgName={orgName} />
-        <main className="flex-1 min-w-0 flex flex-col">
-          <DesktopAppPrompt />
-          {children}
-        </main>
-      </div>
+      <RecordingProvider>
+        <div className="flex min-h-screen bg-paper text-ink">
+          <Sidebar userEmail={user.email ?? ""} orgName={orgName} />
+          <main className="flex-1 min-w-0 flex flex-col">
+            <DesktopAppPrompt />
+            {children}
+          </main>
+        </div>
+      </RecordingProvider>
     </ConfirmProvider>
   );
 }

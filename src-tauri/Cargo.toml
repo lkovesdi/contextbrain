@@ -13,7 +13,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+# macos-private-api: needed for the transparent floating recording widget
+# window (WKWebView transparency is a private API behind this flag).
+tauri = { version = "2", features = ["macos-private-api"] }
 # Captures `contextbrain://...` callback URLs after Supabase / Composio
 # magic-link redirects. Wired into the renderer in Phase 2.
 tauri-plugin-deep-link = "2"

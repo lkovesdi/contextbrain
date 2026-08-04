@@ -198,6 +198,7 @@ export default async function MeetingPage({
           <Eyebrow className="mb-[14px]">Recorder</Eyebrow>
           <Recorder
             meetingId={meeting.id}
+            title={meeting.summary_title ?? meeting.title ?? "Meeting"}
             initialLines={transcripts ?? []}
             initialSpeakerNames={
               (meeting.speaker_names ?? {}) as Record<string, string>

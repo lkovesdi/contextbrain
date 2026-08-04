@@ -76,7 +76,10 @@ pub fn run() {
             dismiss_update_popup,
             restart_app,
             pending_update_version,
-            pending_update_notes
+            pending_update_notes,
+            widget_show,
+            widget_hide,
+            focus_main
         ]);
 
     builder
@@ -165,6 +168,73 @@ fn dismiss_update_popup(app: tauri::AppHandle) {
 #[tauri::command]
 fn restart_app(app: tauri::AppHandle) {
     app.restart();
+}
+
+/// Show the Granola-style floating recording widget — a small always-on-top,
+/// transparent window loading /widget from the deployed frontend. Called by
+/// the web frontend when a recording starts. Recording state itself flows
+/// between the two windows over a same-origin BroadcastChannel, not IPC.
+#[tauri::command]
+fn widget_show(app: tauri::AppHandle) {
+    use tauri::{LogicalPosition, WebviewUrl, WebviewWindowBuilder};
+
+    if let Some(win) = app.get_webview_window("recording-widget") {
+        let _ = win.show();
+        return;
+    }
+    let Ok(url) = tauri::Url::parse("https://contextbrain.vercel.app/widget") else {
+        return;
+    };
+    const WIDGET_W: f64 = 340.0;
+    const WIDGET_H: f64 = 56.0;
+    let built = WebviewWindowBuilder::new(
+        &app,
+        "recording-widget",
+        WebviewUrl::External(url),
+    )
+    .title("Recording")
+    .inner_size(WIDGET_W, WIDGET_H)
+    .resizable(false)
+    .decorations(false)
+    .transparent(true)
+    .shadow(false)
+    .always_on_top(true)
+    .visible_on_all_workspaces(true)
+    .accept_first_mouse(true)
+    .build();
+    match built {
+        Ok(win) => {
+            // Top-right of the current monitor, clear of the menu bar.
+            if let Ok(Some(monitor)) = win.current_monitor() {
+                let scale = monitor.scale_factor();
+                let size = monitor.size().to_logical::<f64>(scale);
+                let _ = win.set_position(LogicalPosition::new(
+                    size.width - WIDGET_W - 20.0,
+                    44.0,
+                ));
+            }
+            let _ = win.show();
+        }
+        Err(e) => eprintln!("widget: create failed: {e}"),
+    }
+}
+
+/// Close the floating recording widget (recording stopped).
+#[tauri::command]
+fn widget_hide(app: tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("recording-widget") {
+        let _ = win.close();
+    }
+}
+
+/// Raise the main window (called by the widget's open button).
+#[tauri::command]
+fn focus_main(app: tauri::AppHandle) {
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.unminimize();
+        let _ = main.show();
+        let _ = main.set_focus();
+    }
 }
 
 // Small native "Relaunch to update" prompt, shown after the updater stages a

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pending-update-notes"
+description = "Enables the pending_update_notes command without any pre-configured scope."
+commands.allow = ["pending_update_notes"]
+
+[[permission]]
+identifier = "deny-pending-update-notes"
+description = "Denies the pending_update_notes command without any pre-configured scope."
+commands.deny = ["pending_update_notes"]

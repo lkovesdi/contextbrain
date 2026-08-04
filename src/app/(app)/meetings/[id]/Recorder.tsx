@@ -1,161 +1,27 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import {
-  createClient as createDg,
-  LiveTranscriptionEvents,
-  type LiveClient,
-} from "@deepgram/sdk";
 import { Mic, Square } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { Popover } from "@/components/ui/Popover";
 import { Input } from "@/components/ui/Input";
+import { LocalTime } from "@/components/ui/LocalTime";
+import { MiniWaveform } from "@/components/recording/MiniWaveform";
+import {
+  useRecording,
+  type StoredLine,
+} from "@/components/recording/RecordingProvider";
 
 type SpeakerNames = Record<string, string>;
-
-type StoredLine = {
-  id: string;
-  speaker: string | null;
-  content: string;
-  created_at: string;
-};
-
-const TARGET_SAMPLE_RATE = 16000;
-
-// ----- Automatic audio processing ------------------------------------------
-// Nobody should have to know what "echo cancellation" means — the right
-// setting is derivable from where audio is playing:
-//  - Speakers: the other participants' voices reach the mic as room bleed,
-//    and that bleed IS our only signal for their side of the call. Echo
-//    cancellation would classify exactly that as echo and delete it, and
-//    noise suppression eats quiet far-field speech — so both stay off.
-//    Deepgram copes with noise far better than with missing audio.
-//  - Headphones: nothing from the call can reach the mic, so there is no
-//    bleed to preserve — noise suppression safely cleans the user's channel.
-// Output labels are only readable once mic permission exists; when unknown we
-// default to raw capture, the failure mode that never loses speech.
-const HEADPHONE_HINT =
-  /headphone|headset|airpod|ear ?pod|earbud|ear ?buds|wh-?1000|wf-?1000|arctis|hyperx|jabra|plantronics/i;
-
-async function usingHeadphones(): Promise<boolean> {
-  try {
-    const list = await navigator.mediaDevices.enumerateDevices();
-    const outs = list.filter((d) => d.kind === "audiooutput");
-    const def = outs.find((d) => d.deviceId === "default") ?? outs[0];
-    return !!def && HEADPHONE_HINT.test(def.label);
-  } catch {
-    return false;
-  }
-}
-
-function downsampleFloat32(
-  input: Float32Array,
-  inputRate: number,
-  targetRate: number
-): Float32Array {
-  if (targetRate >= inputRate) return input;
-  const ratio = inputRate / targetRate;
-  const outLen = Math.floor(input.length / ratio);
-  const out = new Float32Array(outLen);
-  let i = 0;
-  let o = 0;
-  while (o < outLen) {
-    const next = Math.floor((o + 1) * ratio);
-    let sum = 0;
-    let count = 0;
-    for (; i < next && i < input.length; i++) {
-      sum += input[i];
-      count++;
-    }
-    out[o++] = count > 0 ? sum / count : 0;
-  }
-  return out;
-}
-
-function floatTo16BitPCM(input: Float32Array): ArrayBuffer {
-  const out = new Int16Array(input.length);
-  for (let i = 0; i < input.length; i++) {
-    const s = Math.max(-1, Math.min(1, input[i]));
-    out[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-  }
-  return out.buffer;
-}
 
 const SPEAKER_COLOR = ["text-cortex-ink", "text-echo-ink", "text-amber-ink"];
 function speakerIndex(speaker: string | null): number {
   if (!speaker) return 0;
   const m = speaker.match(/\d+/);
   return m ? parseInt(m[0], 10) % 3 : 0;
-}
-
-// Tiny in-button level meter driven by the live mic signal. `levelRef` carries
-// the most recent chunk peak (0..1); each frame we smooth it (fast attack /
-// slow release, like a VU meter) and drive a small equalizer: center bars run
-// taller and a per-bar time wobble keeps it shimmering while someone speaks.
-const MINI_BARS = 5;
-const MINI_MAX_PX = 14;
-const MINI_BASE_PX = 2;
-
-function MiniWaveform({
-  active,
-  levelRef,
-  barClassName = "bg-white",
-}: {
-  active: boolean;
-  levelRef: { current: number };
-  barClassName?: string;
-}) {
-  const ref = useRef<HTMLSpanElement | null>(null);
-  const displayRef = useRef(0);
-
-  useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
-    let frame = 0;
-    const tick = () => {
-      // Perceptual curve so quiet speech is still visible; sqrt ≈ loudness.
-      const target = active
-        ? Math.min(1, Math.sqrt(Math.max(0, levelRef.current)) * 1.4)
-        : 0;
-      const d = displayRef.current;
-      const k = target > d ? 0.5 : 0.14;
-      displayRef.current = d + (target - d) * k;
-
-      const lvl = displayRef.current;
-      const t = performance.now() / 140;
-      const mid = (MINI_BARS - 1) / 2;
-      const bars = node.children;
-      for (let i = 0; i < bars.length; i++) {
-        const center = 1 - Math.abs(i - mid) / mid; // 1 at center, 0 at edges
-        const wobble = 0.6 + 0.4 * Math.sin(t + i * 1.7);
-        const h =
-          MINI_BASE_PX +
-          lvl * (MINI_MAX_PX - MINI_BASE_PX) * (0.45 + 0.55 * center) * wobble;
-        (bars[i] as HTMLElement).style.height = `${h}px`;
-      }
-      frame = requestAnimationFrame(tick);
-    };
-    tick();
-    return () => cancelAnimationFrame(frame);
-  }, [active, levelRef]);
-
-  return (
-    <span
-      ref={ref}
-      aria-hidden
-      className="inline-flex h-[14px] items-center gap-[2px]"
-    >
-      {Array.from({ length: MINI_BARS }).map((_, i) => (
-        <span
-          key={i}
-          className={`w-[2px] rounded-[1px] ${barClassName}`}
-          style={{ height: `${MINI_BASE_PX}px` }}
-        />
-      ))}
-    </span>
-  );
 }
 
 // A transcript speaker label that opens a rename popover on click. The raw
@@ -250,19 +116,23 @@ function RenameSpeakerForm({
 
 export function Recorder({
   meetingId,
+  title,
   initialLines,
   initialSpeakerNames = {},
   initialSummaryStatus = null,
 }: {
   meetingId: string;
+  title: string;
   initialLines: StoredLine[];
   initialSpeakerNames?: SpeakerNames;
   // meetings.summary_status at render time — 'generating' means a server-side
   // run is already in flight (e.g. the user left mid-generation and came back).
   initialSummaryStatus?: string | null;
 }) {
-  const [recording, setRecording] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { session, error, levelRef, start, stop, subscribeLines } = useRecording();
+  const recording = session?.meetingId === meetingId;
+  const recordingElsewhere = !!session && session.meetingId !== meetingId;
+
   const [stored, setStored] = useState<StoredLine[]>(initialLines);
   // Per-meeting overrides mapping a raw diarization label ("Speaker 0",
   // "Unknown") to a name the user attached. Applied at display time so the
@@ -285,12 +155,9 @@ export function Recorder({
       body: JSON.stringify({ speaker_names: next }),
     }).catch(() => {});
   }
+
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState<string>("");
-  // Devicechange listener that re-tunes the live track's processing when the
-  // output route changes mid-recording (e.g. AirPods connect). Held in a ref
-  // so teardownAudio can unregister it.
-  const retuneRef = useRef<(() => void) | null>(null);
   const [summaryState, setSummaryState] = useState<"idle" | "generating" | "error">(
     initialSummaryStatus === "generating"
       ? "generating"
@@ -299,20 +166,31 @@ export function Recorder({
         : "idle"
   );
   const router = useRouter();
-  const connRef = useRef<LiveClient | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const audioCtxRef = useRef<AudioContext | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
-  // Most recent chunk peak amplitude (0..1), read by the Waveform each frame.
-  const levelRef = useRef(0);
-  // Track the most recent transcript line for dedup. Deepgram sometimes emits
-  // the same finalized segment twice, and any duplicated audio pipeline
-  // (Strict Mode, second tab, Fast Refresh during recording) will also push
-  // the same text through. Drop it client-side and rely on the server's
-  // identical guard as a backstop.
-  const lastTranscriptRef = useRef<{ key: string; ts: number } | null>(null);
   const wellRef = useRef<HTMLDivElement | null>(null);
+
+  // Live lines land in the provider (which owns the Deepgram connection and
+  // keeps recording across navigation); this page just renders the ones for
+  // its meeting. The re-check against `prev` mirrors the old in-component
+  // belt-and-braces dedup.
+  useEffect(() => {
+    return subscribeLines((forMeeting, line) => {
+      if (forMeeting !== meetingId) return;
+      setStored((prev) => {
+        if (prev.some((p) => p.id === line.id)) return prev;
+        const cutoff = Date.now() - 5_000;
+        const recentDup = prev
+          .slice(-3)
+          .some(
+            (p) =>
+              p.content === line.content &&
+              p.speaker === line.speaker &&
+              new Date(p.created_at).getTime() > cutoff
+          );
+        if (recentDup) return prev;
+        return [...prev, line];
+      });
+    });
+  }, [subscribeLines, meetingId]);
 
   useEffect(() => {
     if (wellRef.current) wellRef.current.scrollTop = wellRef.current.scrollHeight;
@@ -382,7 +260,7 @@ export function Recorder({
 
   // Restore last-chosen device + load the device list. Labels are blank until
   // the user has granted mic permission at least once; we re-enumerate after
-  // start() succeeds to pick those up.
+  // recording starts to pick those up.
   useEffect(() => {
     const saved =
       typeof window !== "undefined"
@@ -412,244 +290,27 @@ export function Recorder({
     }
   }
 
-  async function start() {
-    setError(null);
+  async function handleStart() {
     try {
-      const res = await fetch("/api/deepgram/token");
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? "Could not get Deepgram token");
-      }
-      const { key } = await res.json();
-
-      const dg = createDg(key);
-      const conn = dg.listen.live({
-        model: "nova-2",
-        language: "en-US",
-        encoding: "linear16",
-        sample_rate: TARGET_SAMPLE_RATE,
-        smart_format: true,
-        interim_results: false,
-        // Separate speakers so each line is tagged Speaker 0/1/2 instead of
-        // collapsing into one "Unknown" bucket. Labels are per-session.
-        diarize: true,
-      });
-      connRef.current = conn;
-
-      conn.on(LiveTranscriptionEvents.Open, async () => {
-        let stream: MediaStream;
-        try {
-          const headphones = await usingHeadphones();
-          const constraints: MediaTrackConstraints = {
-            echoCancellation: false,
-            noiseSuppression: headphones,
-            autoGainControl: true,
-            channelCount: 1,
-          };
-          if (deviceId) constraints.deviceId = { exact: deviceId };
-          stream = await navigator.mediaDevices.getUserMedia({
-            audio: constraints,
-          });
-          // Permission may have been granted just now — re-enumerate so
-          // labels (which were blank pre-permission) populate the picker.
-          navigator.mediaDevices
-            .enumerateDevices()
-            .then((list) =>
-              setDevices(list.filter((d) => d.kind === "audioinput"))
-            )
-            .catch(() => {});
-        } catch {
-          setError("Microphone permission denied. Allow access and try again.");
-          conn.finish();
-          setRecording(false);
-          return;
-        }
-        streamRef.current = stream;
-
-        // Headphones plugged in / pulled out mid-recording → re-tune the live
-        // track instead of making the user stop and restart.
-        const retune = () => {
-          void usingHeadphones().then((hp) => {
-            streamRef.current
-              ?.getAudioTracks()[0]
-              ?.applyConstraints({ noiseSuppression: hp })
-              .catch(() => {});
-          });
-        };
-        retuneRef.current = retune;
-        navigator.mediaDevices?.addEventListener?.("devicechange", retune);
-
-        const AudioCtx =
-          window.AudioContext ||
-          (window as unknown as { webkitAudioContext: typeof AudioContext })
-            .webkitAudioContext;
-        const audioCtx = new AudioCtx();
-        audioCtxRef.current = audioCtx;
-
-        const source = audioCtx.createMediaStreamSource(stream);
-        sourceRef.current = source;
-        // ScriptProcessorNode is deprecated in favour of AudioWorklet but
-        // ships in every current browser and avoids a separate worklet file
-        // for a v1 prototype. Buffer of 4096 gives ~85ms latency at 48kHz.
-        const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-        processorRef.current = processor;
-
-        processor.onaudioprocess = (ev) => {
-          if (conn.getReadyState() !== 1) return;
-          const channel = ev.inputBuffer.getChannelData(0);
-          // Peak amplitude of this chunk — drives the live waveform meter.
-          let p = 0;
-          for (let i = 0; i < channel.length; i++) {
-            const a = channel[i] < 0 ? -channel[i] : channel[i];
-            if (a > p) p = a;
-          }
-          levelRef.current = p;
-
-          const downsampled = downsampleFloat32(
-            channel,
-            audioCtx.sampleRate,
-            TARGET_SAMPLE_RATE
-          );
-          const pcm = floatTo16BitPCM(downsampled);
-          conn.send(pcm);
-        };
-
-        source.connect(processor);
-        // ScriptProcessor only fires onaudioprocess if it's connected to a
-        // destination — pipe through a zero-gain node so we don't echo audio.
-        const sink = audioCtx.createGain();
-        sink.gain.value = 0;
-        processor.connect(sink);
-        sink.connect(audioCtx.destination);
-      });
-
-      conn.on(LiveTranscriptionEvents.Transcript, (data: {
-        channel?: {
-          alternatives?: {
-            transcript?: string;
-            words?: { speaker?: number }[];
-          }[];
-        };
-      }) => {
-        const alt = data.channel?.alternatives?.[0];
-        const transcript = alt?.transcript;
-        if (!transcript) return;
-        const sp = alt?.words?.[0]?.speaker;
-        const speaker = sp !== undefined ? `Speaker ${sp}` : "Unknown";
-
-        const key = `${speaker}${transcript}`;
-        const now = Date.now();
-        const last = lastTranscriptRef.current;
-        if (last && last.key === key && now - last.ts < 5_000) {
-          // Deepgram double-fire (or a second pipeline running) — server has
-          // the same dedup window so the row already exists. Skip silently.
-          return;
-        }
-        lastTranscriptRef.current = { key, ts: now };
-
-        fetch(`/api/meetings/${meetingId}/transcript`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ speaker, text: transcript }),
-        })
-          .then((r) => r.json())
-          .then((j) => {
-            if (!j.ok || j.deduped) return;
-            setStored((prev) => {
-              // Belt-and-braces: if we already have this row id (or an
-              // identical content+speaker within the last few seconds),
-              // don't append again.
-              if (prev.some((p) => p.id === j.id)) return prev;
-              const cutoff = Date.now() - 5_000;
-              const recentDup = prev
-                .slice(-3)
-                .some(
-                  (p) =>
-                    p.content === transcript &&
-                    p.speaker === speaker &&
-                    new Date(p.created_at).getTime() > cutoff
-                );
-              if (recentDup) return prev;
-              return [
-                ...prev,
-                {
-                  id: j.id,
-                  speaker,
-                  content: transcript,
-                  created_at: new Date().toISOString(),
-                },
-              ];
-            });
-          })
-          .catch((e) => console.error("transcript persist failed:", e));
-      });
-
-      conn.on(LiveTranscriptionEvents.Error, (e: unknown) => {
-        const detail: Record<string, unknown> = {};
-        if (e && typeof e === "object") {
-          for (const k of ["type", "message", "code", "reason", "name", "error", "wasClean"]) {
-            const v = (e as Record<string, unknown>)[k];
-            if (v !== undefined) detail[k] = v;
-          }
-        }
-        const msg =
-          (detail.message as string | undefined) ||
-          (detail.reason as string | undefined) ||
-          (detail.code !== undefined ? `code=${detail.code}` : null) ||
-          "Transcription error.";
-        setError(`Deepgram: ${msg} — stop and start again to reconnect.`);
-      });
-
-      setRecording(true);
-    } catch (e) {
-      console.error(e);
-      setError(e instanceof Error ? e.message : "Failed to start recording.");
+      await start({ meetingId, title, deviceId: deviceId || undefined });
+      // Permission may have been granted just now — re-enumerate so labels
+      // (blank pre-permission) populate the picker.
+      navigator.mediaDevices
+        ?.enumerateDevices()
+        .then((list) => setDevices(list.filter((d) => d.kind === "audioinput")))
+        .catch(() => {});
+    } catch {
+      // start() already surfaced the error via the provider.
     }
   }
 
-  function teardownAudio() {
-    if (retuneRef.current) {
-      navigator.mediaDevices?.removeEventListener?.("devicechange", retuneRef.current);
-      retuneRef.current = null;
-    }
-    levelRef.current = 0;
-    processorRef.current?.disconnect();
-    sourceRef.current?.disconnect();
-    audioCtxRef.current?.close().catch(() => {});
-    streamRef.current?.getTracks().forEach((t) => t.stop());
-    processorRef.current = null;
-    sourceRef.current = null;
-    audioCtxRef.current = null;
-    streamRef.current = null;
-  }
-
-  // The two "meeting is over" requests. Summary generation runs server-side
-  // (the POST returns 202 immediately), and `keepalive` lets both requests
-  // survive navigation or the window closing — so leaving the meeting can't
-  // orphan the notes.
-  function requestSummary(): Promise<Response> {
-    fetch(`/api/meetings/${meetingId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ended_at: new Date().toISOString() }),
-      keepalive: true,
-    }).catch(() => {});
-    return fetch(`/api/meetings/${meetingId}/summary`, {
-      method: "POST",
-      keepalive: true,
-    });
-  }
-
-  function stop() {
-    teardownAudio();
-    connRef.current?.finish();
-    setRecording(false);
+  function handleStop() {
     setSummaryState("generating");
-    requestSummary()
+    stop()
       .then((res) => {
         // 202 = generation started server-side; the poll effect below picks
         // up the outcome. Anything else is an immediate failure.
-        if (!res.ok) setSummaryState("error");
+        if (res && !res.ok) setSummaryState("error");
       })
       .catch(() => setSummaryState("error"));
   }
@@ -679,8 +340,6 @@ export function Recorder({
   // Auto-start recording when we arrive from the desktop "Meeting Detected"
   // popup — the quick-start route redirects here with `?record=1`. Runs once,
   // and strips the flag so a refresh doesn't kick off another recording.
-  // (Restored: this shipped in eedf2e6 and was accidentally reverted by the
-  // agent-chat working-copy commit 1612b4a.)
   const autoStartedRef = useRef(false);
   useEffect(() => {
     if (autoStartedRef.current || typeof window === "undefined") return;
@@ -689,29 +348,9 @@ export function Recorder({
     window.history.replaceState(null, "", `/meetings/${meetingId}`);
     // Defer out of the effect body so the synchronous setState inside start()
     // doesn't trip the cascading-render rule, and the page can paint first.
-    queueMicrotask(() => void start());
+    queueMicrotask(() => void handleStart());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetingId]);
-
-  // Mirror `recording` into a ref so the unmount cleanup below sees the
-  // current value without re-registering.
-  const recordingRef = useRef(false);
-  useEffect(() => {
-    recordingRef.current = recording;
-  }, [recording]);
-
-  useEffect(() => () => {
-    // Backing out of the meeting mid-recording must not orphan it: end the
-    // meeting and kick off server-side notes exactly like pressing Stop —
-    // the keepalive requests outlive this component (and the window).
-    if (recordingRef.current) {
-      recordingRef.current = false;
-      requestSummary().catch(() => {});
-    }
-    teardownAudio();
-    connRef.current?.finish();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   return (
     <div className="flex flex-col gap-[14px]">
@@ -720,7 +359,7 @@ export function Recorder({
           <Button
             variant="danger"
             size="md"
-            onClick={stop}
+            onClick={handleStop}
             aria-label="Stop recording"
             title="Stop recording"
             leftIcon={<Square size={12} strokeWidth={0} fill="currentColor" />}
@@ -728,11 +367,22 @@ export function Recorder({
           >
             Stop
           </Button>
+        ) : recordingElsewhere ? (
+          <p className="m-0 flex items-center gap-2 rounded-[6px] border border-mist bg-bone-2 px-3 py-2 text-[12px] text-slate-2">
+            <span className="w-[6px] h-[6px] rounded-full bg-pulse [animation:mb-pulse_1.4s_infinite]" />
+            Recording another meeting —{" "}
+            <Link
+              href={`/meetings/${session!.meetingId}`}
+              className="cursor-pointer text-cortex-ink underline underline-offset-2"
+            >
+              go to it
+            </Link>
+          </p>
         ) : (
           <Button
             variant="ink"
             size="md"
-            onClick={start}
+            onClick={handleStart}
             aria-label="Start recording"
             title="Start recording"
             leftIcon={<Mic size={14} strokeWidth={1.6} />}
@@ -811,14 +461,18 @@ export function Recorder({
                     />
                   </div>
                   <div className="text-[14px] leading-[1.55] text-ink">
-                    <span className="font-mono text-[10.5px] text-slate-3 mr-2">
-                      {new Date(l.created_at).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit",
-                        hour12: false,
-                      })}
-                    </span>
+                    <LocalTime
+                      className="font-mono text-[10.5px] text-slate-3 mr-2"
+                      date={l.created_at}
+                      format={(d) =>
+                        d.toLocaleTimeString([], {
+                          hour: "2-digit",
+                          minute: "2-digit",
+                          second: "2-digit",
+                          hour12: false,
+                        })
+                      }
+                    />
                     {l.content}
                   </div>
                 </div>

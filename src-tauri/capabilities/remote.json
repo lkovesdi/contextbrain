@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "remote-frontend",
+  "description": "Lets the remotely-hosted frontend (main window + recording widget) invoke the app's own commands — widget window management and focusing the main window. Recording state flows between the windows over a same-origin BroadcastChannel, so IPC stays limited to window management. core:default also covers start-dragging for the widget's drag region.",
+  "remote": {
+    "urls": ["https://contextbrain.vercel.app"]
+  },
+  "windows": ["main", "recording-widget"],
+  "permissions": [
+    "core:default",
+    "allow-ping",
+    "allow-widget-show",
+    "allow-widget-hide",
+    "allow-focus-main"
+  ]
+}
