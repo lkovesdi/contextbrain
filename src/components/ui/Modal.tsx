@@ -39,6 +39,19 @@ export function Modal({
   // eslint-disable-next-line react-hooks/set-state-in-effect
   React.useEffect(() => setMounted(true), []);
 
+  // Callers pass inline arrows for onClose, so its identity changes every
+  // render. Read it (and closeOnEsc) through refs so the focus/scroll-lock
+  // effect below depends on `open` alone — with them in the dep array, any
+  // state change inside the modal re-ran the effect, and each re-run yanked
+  // focus to the panel's first focusable element (breaking e.g. the tag
+  // dropdown, which closes on blur).
+  const onCloseRef = React.useRef(onClose);
+  const closeOnEscRef = React.useRef(closeOnEsc);
+  React.useEffect(() => {
+    onCloseRef.current = onClose;
+    closeOnEscRef.current = closeOnEsc;
+  });
+
   React.useEffect(() => {
     if (!open) return;
     const prevOverflow = document.body.style.overflow;
@@ -46,9 +59,9 @@ export function Modal({
     const prevActive = document.activeElement as HTMLElement | null;
 
     function onKey(e: KeyboardEvent) {
-      if (closeOnEsc && e.key === "Escape") {
+      if (closeOnEscRef.current && e.key === "Escape") {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
       }
     }
     window.addEventListener("keydown", onKey);
@@ -67,7 +80,7 @@ export function Modal({
       window.removeEventListener("keydown", onKey);
       prevActive?.focus?.();
     };
-  }, [open, closeOnEsc, onClose]);
+  }, [open]);
 
   if (!mounted || !open) return null;
 

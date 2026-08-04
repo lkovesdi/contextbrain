@@ -173,6 +173,9 @@ export function NewMeetingButton({ presets }: { presets: Preset[] }) {
                 <div
                   className="absolute left-0 right-0 top-full mt-1 z-10 rounded-[8px] border border-mist bg-bone-2 py-[5px] max-h-[180px] overflow-y-auto"
                   style={{ boxShadow: "var(--shadow-3)" }}
+                  // Any press inside the list (padding included) must not blur
+                  // the input — blur is what closes the dropdown.
+                  onMouseDown={(e) => e.preventDefault()}
                 >
                   {showCreateTag && parsedTag && (
                     <button
