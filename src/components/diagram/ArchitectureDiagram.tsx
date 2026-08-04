@@ -78,11 +78,28 @@ const CELL_H = 138;
 const PAD = 72;
 const TILE = 54;
 
+const CANVAS_BG = "#111217";
+
 function rgba(hex: string, alpha: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+}
+
+// Same tint as rgba(hex, alpha) painted on the canvas, but fully opaque — used
+// for node tiles so edges routed underneath can't show through them.
+function onCanvas(hex: string, alpha: number): string {
+  const ch = (s: string, i: number) => parseInt(s.slice(i, i + 2), 16);
+  const mix = (i: number) =>
+    Math.round(alpha * ch(hex, i) + (1 - alpha) * ch(CANVAS_BG, i));
+  return `rgb(${mix(1)}, ${mix(3)}, ${mix(5)})`;
+}
+
+// Point on a cubic bezier at parameter t, one axis at a time.
+function bez(t: number, a: number, b: number, c: number, d: number): number {
+  const u = 1 - t;
+  return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d;
 }
 
 function wrapLabel(label: string, max = 17): string[] {
@@ -383,9 +400,27 @@ export function ArchitectureDiagram({
               : e.style === "flow"
                 ? "rgba(226,232,240,0.5)"
                 : "rgba(226,232,240,0.32)";
-            // Cubic bezier midpoint (t = 0.5) for the label.
-            const midX = (sx + 3 * c1x + 3 * c2x + tx) / 8;
-            const midY = (sy + 3 * c1y + 3 * c2y + ty) / 8;
+            // Label at the curve midpoint — unless that lands on a node tile
+            // or its caption (generated layouts do this a lot), in which case
+            // slide along the curve to the nearest clear spot.
+            let lt = 0.5;
+            for (const cand of [0.5, 0.4, 0.6, 0.3, 0.7, 0.22]) {
+              const px = bez(cand, sx, c1x, c2x, tx);
+              const py = bez(cand, sy, c1y, c2y, ty);
+              const clear = graph.nodes.every((nn) => {
+                const q = nodePos.get(nn.id)!;
+                return (
+                  px < q.cx - 64 || px > q.cx + 64 ||
+                  py < q.cy - TILE / 2 - 10 || py > q.cy + TILE / 2 + 44
+                );
+              });
+              if (clear) {
+                lt = cand;
+                break;
+              }
+            }
+            const midX = bez(lt, sx, c1x, c2x, tx);
+            const midY = bez(lt, sy, c1y, c2y, ty);
             return (
               <g key={key}>
                 <path
@@ -411,7 +446,7 @@ export function ArchitectureDiagram({
                     x={midX} y={midY - 6}
                     textAnchor="middle" fontSize="9.5"
                     fill="rgba(226,232,240,0.65)"
-                    stroke="#111217" strokeWidth="4" paintOrder="stroke"
+                    stroke={CANVAS_BG} strokeWidth="4" paintOrder="stroke"
                     style={{ fontFamily: "var(--font-geist-mono, monospace)" }}
                   >
                     {e.label}
@@ -443,7 +478,7 @@ export function ArchitectureDiagram({
                 <rect
                   x={p.cx - TILE / 2} y={p.cy - TILE / 2}
                   width={TILE} height={TILE} rx="13"
-                  fill={rgba(meta.color, 0.13)}
+                  fill={onCanvas(meta.color, 0.13)}
                   stroke={rgba(meta.color, 0.5)}
                   strokeWidth="1.2"
                 />
@@ -456,7 +491,7 @@ export function ArchitectureDiagram({
                     x={p.cx} y={p.cy + TILE / 2 + 16 + i * 14}
                     textAnchor="middle" fontSize="11.5"
                     fill="#E6E7EB"
-                    stroke="#111217" strokeWidth="3" paintOrder="stroke"
+                    stroke={CANVAS_BG} strokeWidth="4" paintOrder="stroke"
                   >
                     {line}
                   </text>
@@ -465,8 +500,8 @@ export function ArchitectureDiagram({
                   <text
                     x={p.cx} y={p.cy + TILE / 2 + 16 + lines.length * 14}
                     textAnchor="middle" fontSize="8.5" letterSpacing="0.06em"
-                    fill="rgba(226,232,240,0.45)"
-                    stroke="#111217" strokeWidth="3" paintOrder="stroke"
+                    fill="rgba(226,232,240,0.55)"
+                    stroke={CANVAS_BG} strokeWidth="4" paintOrder="stroke"
                     style={{ fontFamily: "var(--font-geist-mono, monospace)", textTransform: "uppercase" }}
                   >
                     {n.sublabel}
