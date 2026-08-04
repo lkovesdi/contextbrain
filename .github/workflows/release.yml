@@ -42,6 +42,18 @@ jobs:
 
       - run: npm ci
 
+      # The release body doubles as the in-app "What's new" popup content:
+      # tauri-action bakes it into latest.json's `notes`, which the updater
+      # exposes as update.body. Keep RELEASE_NOTES.md current per release.
+      - name: Read release notes
+        id: notes
+        run: |
+          {
+            echo "body<<NOTES_EOF"
+            cat RELEASE_NOTES.md
+            echo "NOTES_EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build & release
         uses: tauri-apps/tauri-action@v0
         env:
@@ -60,7 +72,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "ContextBrain ${{ github.ref_name }}"
-          releaseBody: "Download the .dmg below."
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: true
           prerelease: false
           args: "--target universal-apple-darwin"

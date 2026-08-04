@@ -60,8 +60,10 @@ pub fn run() {
             ping,
             start_meeting,
             dismiss_popup,
+            dismiss_update_popup,
             restart_app,
-            pending_update_version
+            pending_update_version,
+            pending_update_notes
         ]);
 
     builder
@@ -107,14 +109,43 @@ fn dismiss_popup(app: tauri::AppHandle) {
     }
 }
 
-/// Version of an update that's been downloaded and staged but not yet applied.
-/// The "Relaunch to update" prompt reads this to show which version is waiting.
+/// An update that's been downloaded and staged but not yet applied. The
+/// "What's new" prompt reads the version for its header and the notes (the
+/// GitHub release body, carried through latest.json) for its changelog.
+#[derive(Clone)]
+struct StagedUpdate {
+    version: String,
+    notes: Option<String>,
+}
+
 #[derive(Default)]
-struct PendingUpdate(std::sync::Mutex<Option<String>>);
+struct PendingUpdate(std::sync::Mutex<Option<StagedUpdate>>);
 
 #[tauri::command]
 fn pending_update_version(state: tauri::State<'_, PendingUpdate>) -> Option<String> {
-    state.0.lock().ok().and_then(|slot| slot.clone())
+    state
+        .0
+        .lock()
+        .ok()
+        .and_then(|slot| slot.as_ref().map(|u| u.version.clone()))
+}
+
+#[tauri::command]
+fn pending_update_notes(state: tauri::State<'_, PendingUpdate>) -> Option<String> {
+    state
+        .0
+        .lock()
+        .ok()
+        .and_then(|slot| slot.as_ref().and_then(|u| u.notes.clone()))
+}
+
+/// Close the "What's new" prompt without relaunching — the staged update
+/// still applies on the next natural launch.
+#[tauri::command]
+fn dismiss_update_popup(app: tauri::AppHandle) {
+    if let Some(popup) = app.get_webview_window("update-popup") {
+        let _ = popup.close();
+    }
 }
 
 /// Relaunch the app to apply a staged update (called by the prompt's button).
@@ -140,11 +171,14 @@ fn show_update_popup(app: &tauri::AppHandle) {
         WebviewUrl::App("update-popup.html".into()),
     )
     .title("Update ready")
-    .inner_size(320.0, 96.0)
+    .inner_size(360.0, 300.0)
     .resizable(false)
     .decorations(false)
     .always_on_top(true)
     .skip_taskbar(true)
+    // Same first-click rule as the meeting popup: the prompt is rarely the
+    // key window, and its buttons must react to the first click.
+    .accept_first_mouse(true)
     .center()
     .build();
 }
@@ -356,6 +390,9 @@ async fn check_for_updates(app: tauri::AppHandle) -> tauri_plugin_updater::Resul
 
     if let Some(update) = app.updater()?.check().await? {
         let version = update.version.clone();
+        // Release notes travel from the GitHub release body via latest.json's
+        // `notes` field into `update.body` — the popup renders them.
+        let notes = update.body.clone();
         eprintln!(
             "updater: installing {} (was {})",
             update.version, update.current_version
@@ -363,11 +400,11 @@ async fn check_for_updates(app: tauri::AppHandle) -> tauri_plugin_updater::Resul
         update.download_and_install(|_, _| {}, || {}).await?;
         eprintln!("updater: staged — applies on relaunch");
 
-        // Remember the staged version, then surface the "Relaunch to update"
+        // Remember the staged version + notes, then surface the "What's new"
         // prompt so the user can apply it now instead of on their next launch.
         if let Some(state) = app.try_state::<PendingUpdate>() {
             if let Ok(mut slot) = state.0.lock() {
-                *slot = Some(version);
+                *slot = Some(StagedUpdate { version, notes });
             }
         }
         let app = app.clone();

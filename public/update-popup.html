@@ -16,20 +16,34 @@
         overflow: hidden;
       }
       .card {
+        position: relative;
         height: 100%;
-        width: 100%;
         display: flex;
-        align-items: center;
-        gap: 12px;
-        padding: 0 14px;
+        flex-direction: column;
+        gap: 10px;
+        padding: 16px;
         background: #1b1c22;
         color: #f2f1ed;
-        border: none;
-        text-align: left;
-        cursor: pointer;
-        transition: background 120ms ease;
       }
-      .card:hover { background: #20212a; }
+      .close {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        width: 22px;
+        height: 22px;
+        display: grid;
+        place-content: center;
+        border: none;
+        border-radius: 6px;
+        background: transparent;
+        color: #8b8c92;
+        font-size: 15px;
+        line-height: 1;
+        cursor: pointer;
+        transition: background 120ms ease, color 120ms ease;
+      }
+      .close:hover { background: rgba(255, 255, 255, 0.08); color: #f2f1ed; }
+      .head { display: flex; align-items: center; gap: 11px; padding-right: 26px; }
       .icon {
         flex: 0 0 auto;
         width: 34px;
@@ -40,28 +54,79 @@
         background: rgba(75, 73, 230, 0.16);
         color: #8f8dff;
       }
-      .mid { flex: 1 1 auto; min-width: 0; }
       .title { font-size: 14px; font-weight: 600; line-height: 1.2; }
       .ver { margin-top: 1px; font-size: 11.5px; color: #8b8c92; }
-      .arrow { flex: 0 0 auto; color: #8b8c92; transition: transform 120ms ease, color 120ms ease; }
-      .card:hover .arrow { color: #f2f1ed; transform: translateX(2px); }
+      .notes {
+        flex: 1 1 auto;
+        overflow-y: auto;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 9px;
+        padding: 10px 12px;
+        font-size: 12px;
+        line-height: 1.5;
+        color: #c9cbd4;
+        user-select: text;
+        cursor: auto;
+      }
+      .notes h4 {
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        color: #8b8c92;
+        margin: 4px 0 6px;
+      }
+      .notes ul { list-style: none; }
+      .notes li {
+        position: relative;
+        padding-left: 14px;
+        margin-bottom: 5px;
+      }
+      .notes li::before {
+        content: "";
+        position: absolute;
+        left: 1px;
+        top: 7px;
+        width: 5px;
+        height: 5px;
+        border-radius: 999px;
+        background: #4b49e6;
+      }
+      .notes p { margin-bottom: 6px; }
+      .btn {
+        flex: 0 0 auto;
+        width: 100%;
+        padding: 9px 12px;
+        border: none;
+        border-radius: 9px;
+        background: #4b49e6;
+        color: #fff;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 120ms ease;
+      }
+      .btn:hover { background: #3835d4; }
+      .btn:active { background: #2a28b8; }
     </style>
   </head>
   <body>
-    <button class="card" id="relaunch" type="button">
-      <span class="icon" aria-hidden>
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" />
-        </svg>
-      </span>
-      <span class="mid">
-        <span class="title">Relaunch to update</span>
-        <span class="ver" id="ver">A new version is ready</span>
-      </span>
-      <span class="arrow" aria-hidden>
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14" /><path d="M13 5l7 7-7 7" /></svg>
-      </span>
-    </button>
+    <div class="card">
+      <button class="close" id="dismiss" type="button" aria-label="Not now" title="Not now">✕</button>
+      <div class="head">
+        <span class="icon" aria-hidden>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" /><path d="M21 3v6h-6" />
+          </svg>
+        </span>
+        <span>
+          <span class="title">Update ready</span>
+          <div class="ver" id="ver">A new version is staged</div>
+        </span>
+      </div>
+      <div class="notes" id="notes"><p>Loading what&rsquo;s new&hellip;</p></div>
+      <button class="btn" id="relaunch" type="button">Relaunch to update</button>
+    </div>
     <script>
       function invoke(cmd) {
         if (window.__TAURI__ && window.__TAURI__.core) {
@@ -72,14 +137,57 @@
         }
         return Promise.reject(new Error("Tauri bridge unavailable"));
       }
-      // Show the staged version, if the command reports one.
+
       Promise.resolve(invoke("pending_update_version"))
         .then(function (v) {
-          if (v) document.getElementById("ver").textContent = "v" + v;
+          if (v) document.getElementById("ver").textContent = "v" + v + " — applies on relaunch";
         })
         .catch(function () {});
+
+      // Render the release body (markdown-ish) as headings, bullets, and
+      // paragraphs. Text nodes only — no HTML from the network is injected.
+      Promise.resolve(invoke("pending_update_notes"))
+        .then(function (notes) {
+          var box = document.getElementById("notes");
+          box.textContent = "";
+          if (!notes) {
+            var p = document.createElement("p");
+            p.textContent = "Bug fixes and improvements.";
+            box.appendChild(p);
+            return;
+          }
+          var list = null;
+          notes.split(/\r?\n/).forEach(function (raw) {
+            var line = raw.trim();
+            if (!line) { list = null; return; }
+            if (/^#{1,6}\s/.test(line)) {
+              var h = document.createElement("h4");
+              h.textContent = line.replace(/^#{1,6}\s+/, "");
+              box.appendChild(h);
+              list = null;
+            } else if (/^[-*]\s/.test(line)) {
+              if (!list) { list = document.createElement("ul"); box.appendChild(list); }
+              var li = document.createElement("li");
+              li.textContent = line.replace(/^[-*]\s+/, "");
+              list.appendChild(li);
+            } else {
+              var para = document.createElement("p");
+              para.textContent = line;
+              box.appendChild(para);
+              list = null;
+            }
+          });
+        })
+        .catch(function () {});
+
       document.getElementById("relaunch").addEventListener("click", function () {
         invoke("restart_app");
+      });
+      document.getElementById("dismiss").addEventListener("click", function () {
+        invoke("dismiss_update_popup");
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape") invoke("dismiss_update_popup");
       });
     </script>
   </body>
