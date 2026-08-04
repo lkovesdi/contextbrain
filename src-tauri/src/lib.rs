@@ -38,19 +38,32 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             mic_monitor::start(app.handle().clone());
 
-            // Auto-update: on launch, check the GitHub Release endpoint and,
-            // if a newer signed build exists, download + install it in the
-            // background. On macOS the new bundle is swapped in place and
-            // takes effect on the next launch, so the running session is
-            // never interrupted by a forced restart. Disabled in debug
-            // builds, which have no signed updater artifacts to verify.
+            // Auto-update: check the GitHub Release endpoint at launch and
+            // then every 4 hours — an app kept open for days would otherwise
+            // never notice a release (launch-only checking was exactly how
+            // v0.2.1 went unseen). A newer signed build is downloaded +
+            // staged in the background and applies on the next launch, so
+            // the running session is never interrupted. Ticks are skipped
+            // once an update is staged — nothing to re-download, and the
+            // staged version applies on relaunch regardless. Disabled in
+            // debug builds, which have no signed updater artifacts to verify.
             #[cfg(not(debug_assertions))]
             {
+                const CHECK_INTERVAL: std::time::Duration =
+                    std::time::Duration::from_secs(4 * 60 * 60);
                 let handle = app.handle().clone();
-                tauri::async_runtime::spawn(async move {
-                    if let Err(err) = check_for_updates(handle).await {
-                        eprintln!("updater: check failed: {err}");
+                std::thread::spawn(move || loop {
+                    let staged = handle
+                        .try_state::<PendingUpdate>()
+                        .and_then(|state| state.0.lock().ok().map(|slot| slot.is_some()))
+                        .unwrap_or(false);
+                    if !staged {
+                        let check = check_for_updates(handle.clone());
+                        if let Err(err) = tauri::async_runtime::block_on(check) {
+                            eprintln!("updater: check failed: {err}");
+                        }
                     }
+                    std::thread::sleep(CHECK_INTERVAL);
                 });
             }
 
