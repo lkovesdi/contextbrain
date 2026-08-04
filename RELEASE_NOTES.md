@@ -1,5 +1,4 @@
-## What's new in v0.2.5
+## What's new in v0.2.6
 
-- The floating recording widget is now draggable, and its buttons work even while the main window is minimized — stop and open are routed natively instead of through the page.
-- Recording keeps running reliably with the app minimized or in the background.
-- The widget no longer steals focus or window actions from the main window, and double-clicking the top of the main window zooms it again, matching normal macOS titlebars.
+- The floating recording widget's buttons now work no matter what — including while the main window is minimized. The widget is a true non-activating panel (like Spotlight), so clicking it never yanks focus from what you're doing.
+- Clicking the Dock icon now always restores a minimized main window, even while the widget is showing.

@@ -83,9 +83,22 @@ pub fn run() {
             focus_main
         ]);
 
-    builder
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+    let app = builder
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+    app.run(|app_handle, event| {
+        // Dock-icon click while the main window is minimized: macOS only
+        // auto-restores minimized windows when the app has NO visible windows,
+        // and the floating recording widget counts as one — so restore the
+        // main window ourselves.
+        if let tauri::RunEvent::Reopen { .. } = event {
+            if let Some(main) = app_handle.get_webview_window("main") {
+                let _ = main.unminimize();
+                let _ = main.show();
+                let _ = main.set_focus();
+            }
+        }
+    });
 }
 
 /// Sanity-check command — the renderer can call `invoke('ping')` to confirm
@@ -202,13 +215,22 @@ fn widget_show(app: tauri::AppHandle) {
     .always_on_top(true)
     .visible_on_all_workspaces(true)
     .accept_first_mouse(true)
-    // Never becomes the key/main window — clicks act without stealing focus
-    // from whatever the user is doing, and window actions (zoom, fullscreen)
-    // keep targeting the main window.
-    .focusable(false)
     .build();
     match built {
         Ok(win) => {
+            // Granola/Spotlight behavior: reclass the window into a
+            // non-activating NSPanel so its buttons work without activating
+            // the app — even while the main window is minimized — and without
+            // stealing focus or window actions from the main window.
+            #[cfg(target_os = "macos")]
+            {
+                let w = win.clone();
+                let _ = win.run_on_main_thread(move || {
+                    if let Ok(ptr) = w.ns_window() {
+                        macos_panel::convert_to_nonactivating_panel(ptr);
+                    }
+                });
+            }
             // Top-right of the current monitor, clear of the menu bar.
             if let Ok(Some(monitor)) = win.current_monitor() {
                 let scale = monitor.scale_factor();
@@ -221,6 +243,51 @@ fn widget_show(app: tauri::AppHandle) {
             let _ = win.show();
         }
         Err(e) => eprintln!("widget: create failed: {e}"),
+    }
+}
+
+// The floating recording widget must accept clicks without activating the
+// app (Spotlight-style). AppKit expresses that as a non-activating NSPanel —
+// Tauri only creates NSWindows, so we reclass the live window into an NSPanel
+// subclass. NSPanel adds no instance variables over NSWindow, which is what
+// makes the isa-swizzle safe (the same technique tauri-nspanel uses).
+#[cfg(target_os = "macos")]
+mod macos_panel {
+    use objc2::runtime::AnyObject;
+    use objc2::{define_class, ClassType, MainThreadMarker};
+    use objc2_app_kit::{NSPanel, NSWindowStyleMask};
+
+    define_class!(
+        #[unsafe(super(NSPanel))]
+        #[name = "ContextBrainRecordingPanel"]
+        struct RecordingPanel;
+
+        impl RecordingPanel {
+            // Key status is needed for the webview's buttons to interact
+            // normally; the NonactivatingPanel style mask keeps that from
+            // activating the app or raising other windows.
+            #[unsafe(method(canBecomeKeyWindow))]
+            fn can_become_key_window(&self) -> bool {
+                true
+            }
+
+            #[unsafe(method(canBecomeMainWindow))]
+            fn can_become_main_window(&self) -> bool {
+                false
+            }
+        }
+    );
+
+    pub fn convert_to_nonactivating_panel(ns_window_ptr: *mut std::ffi::c_void) {
+        if MainThreadMarker::new().is_none() {
+            return;
+        }
+        let obj: &AnyObject = unsafe { &*(ns_window_ptr as *const AnyObject) };
+        unsafe { AnyObject::set_class(obj, RecordingPanel::class()) };
+        let panel: &NSPanel = unsafe { &*(ns_window_ptr as *const NSPanel) };
+        panel.setStyleMask(panel.styleMask() | NSWindowStyleMask::NonactivatingPanel);
+        panel.setBecomesKeyOnlyIfNeeded(true);
+        panel.setFloatingPanel(true);
     }
 }
 
