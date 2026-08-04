@@ -8,9 +8,11 @@
   "windows": ["main", "recording-widget"],
   "permissions": [
     "core:default",
+    "core:window:allow-start-dragging",
     "allow-ping",
     "allow-widget-show",
     "allow-widget-hide",
+    "allow-widget-stop",
     "allow-focus-main"
   ]
 }

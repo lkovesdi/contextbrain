@@ -451,6 +451,26 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     };
   }, [router]);
 
+  // Hooks for the desktop shell: the widget's stop/open buttons go through
+  // Rust commands that eval these globals in this window — unlike a
+  // BroadcastChannel message, that works even while this window is minimized
+  // and its JS would otherwise be suspended.
+  useEffect(() => {
+    const w = window as unknown as {
+      __cbRecordingStop?: () => void;
+      __cbRecordingOpen?: () => void;
+    };
+    w.__cbRecordingStop = () => void stopRef.current();
+    w.__cbRecordingOpen = () => {
+      const s = sessionRef.current;
+      if (s) router.push(`/meetings/${s.meetingId}`);
+    };
+    return () => {
+      delete w.__cbRecordingStop;
+      delete w.__cbRecordingOpen;
+    };
+  }, [router]);
+
   // The window actually closing (refresh, quit) must not orphan the meeting:
   // end it exactly like pressing Stop — keepalive requests outlive the page.
   // SPA route changes never fire pagehide, so navigation keeps recording.

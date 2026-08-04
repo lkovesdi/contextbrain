@@ -79,6 +79,7 @@ pub fn run() {
             pending_update_notes,
             widget_show,
             widget_hide,
+            widget_stop,
             focus_main
         ]);
 
@@ -201,6 +202,10 @@ fn widget_show(app: tauri::AppHandle) {
     .always_on_top(true)
     .visible_on_all_workspaces(true)
     .accept_first_mouse(true)
+    // Never becomes the key/main window — clicks act without stealing focus
+    // from whatever the user is doing, and window actions (zoom, fullscreen)
+    // keep targeting the main window.
+    .focusable(false)
     .build();
     match built {
         Ok(win) => {
@@ -227,13 +232,27 @@ fn widget_hide(app: tauri::AppHandle) {
     }
 }
 
-/// Raise the main window (called by the widget's open button).
+/// Raise the main window and open the recording's meeting page (called by the
+/// widget's open button). Routed through Rust so it works even when the main
+/// window is minimized and its page JS is suspended — eval wakes the webview.
 #[tauri::command]
 fn focus_main(app: tauri::AppHandle) {
     if let Some(main) = app.get_webview_window("main") {
         let _ = main.unminimize();
         let _ = main.show();
         let _ = main.set_focus();
+        let _ = main.eval("window.__cbRecordingOpen && window.__cbRecordingOpen()");
+    }
+}
+
+/// Stop the active recording (called by the widget's stop button). The main
+/// window's JS owns the mic + Deepgram connection, so we run the stop there —
+/// via Rust rather than a web message, so a minimized/suspended main window
+/// still executes it.
+#[tauri::command]
+fn widget_stop(app: tauri::AppHandle) {
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.eval("window.__cbRecordingStop && window.__cbRecordingStop()");
     }
 }
 
@@ -427,12 +446,33 @@ mod macos_titlebar {
         impl DragStrip {
             #[unsafe(method(mouseDown:))]
             fn mouse_down(&self, event: &NSEvent) {
-                if let Some(window) = self.window() {
+                let Some(window) = self.window() else {
+                    return;
+                };
+                // Double-click = the native titlebar action (zoom by default,
+                // or whatever the user set in System Settings); single click
+                // starts the window drag.
+                if unsafe { event.clickCount() } >= 2 {
+                    double_click_action(&window);
+                } else {
                     window.performWindowDragWithEvent(event);
                 }
             }
         }
     );
+
+    fn double_click_action(window: &NSWindow) {
+        use objc2_foundation::{ns_string, NSUserDefaults};
+        let action = unsafe {
+            NSUserDefaults::standardUserDefaults().stringForKey(ns_string!("AppleActionOnDoubleClick"))
+        };
+        let action = action.map(|s| s.to_string());
+        match action.as_deref() {
+            Some("Minimize") => unsafe { window.miniaturize(None) },
+            Some("None") => {}
+            _ => unsafe { window.performZoom(None) },
+        }
+    }
 
     pub fn install_drag_strip(ns_window_ptr: *mut std::ffi::c_void) {
         let Some(mtm) = MainThreadMarker::new() else {

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-widget-stop"
+description = "Enables the widget_stop command without any pre-configured scope."
+commands.allow = ["widget_stop"]
+
+[[permission]]
+identifier = "deny-widget-stop"
+description = "Denies the widget_stop command without any pre-configured scope."
+commands.deny = ["widget_stop"]

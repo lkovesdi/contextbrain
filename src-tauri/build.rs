@@ -13,6 +13,7 @@ fn main() {
             "pending_update_notes",
             "widget_show",
             "widget_hide",
+            "widget_stop",
             "focus_main",
         ])),
     )

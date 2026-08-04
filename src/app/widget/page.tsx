@@ -98,8 +98,10 @@ export default function RecordingWidget() {
           aria-label="Open meeting"
           title="Open meeting"
           onClick={() => {
-            bcRef.current?.postMessage({ type: "open" });
+            // Rust command first — it raises the window and works even when
+            // the main window is minimized; the broadcast is a web fallback.
             tauriInvoke("focus_main");
+            bcRef.current?.postMessage({ type: "open" });
           }}
           className="cursor-pointer flex h-[28px] w-[28px] flex-shrink-0 items-center justify-center rounded-full border border-[rgba(255,255,255,0.14)] bg-[rgba(255,255,255,0.06)] text-white/85 transition-colors duration-[120ms] hover:bg-[rgba(255,255,255,0.14)]"
         >
@@ -109,7 +111,10 @@ export default function RecordingWidget() {
           type="button"
           aria-label="Stop recording"
           title="Stop recording"
-          onClick={() => bcRef.current?.postMessage({ type: "stop" })}
+          onClick={() => {
+            tauriInvoke("widget_stop");
+            bcRef.current?.postMessage({ type: "stop" });
+          }}
           className="cursor-pointer flex h-[28px] w-[28px] flex-shrink-0 items-center justify-center rounded-full bg-pulse/90 text-white transition-colors duration-[120ms] hover:bg-pulse"
         >
           <Square size={10} strokeWidth={0} fill="currentColor" />
