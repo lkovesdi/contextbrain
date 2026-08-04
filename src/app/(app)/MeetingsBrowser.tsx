@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Search, Loader2 } from "lucide-react";
 import { Eyebrow } from "@/components/ui/typography";
 import { ListCard } from "@/components/ui/Card";
+import { LocalTime } from "@/components/ui/LocalTime";
 import { SpacePicker } from "./meetings/[id]/SpacePicker";
 import { MeetingTags } from "./meetings/[id]/MeetingTags";
 import { DeleteMeetingButton } from "./DeleteMeetingButton";
@@ -202,7 +203,7 @@ function MeetingRow({
               {displayTitle(m)}
             </div>
             <div className="font-mono text-[11px] text-slate mt-[3px] flex gap-[14px] truncate">
-              <span>{m.started_at ? new Date(m.started_at).toLocaleString() : "—"}</span>
+              <LocalTime date={m.started_at} />
               {duration && <span>· {duration}</span>}
             </div>
           </div>
