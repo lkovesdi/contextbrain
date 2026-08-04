@@ -69,6 +69,17 @@ pub fn run() {
 
             Ok(())
         })
+        .on_window_event(|window, event| {
+            // The recording widget panel is never destroyed (closing the
+            // class-swapped panel aborts — see widget_hide), so once it
+            // exists the app would no longer auto-exit when the last real
+            // window closes. Restore that: closing the main window quits.
+            if window.label() == "main" {
+                if let tauri::WindowEvent::Destroyed = event {
+                    window.app_handle().exit(0);
+                }
+            }
+        })
         .invoke_handler(tauri::generate_handler![
             ping,
             start_meeting,
@@ -192,6 +203,7 @@ fn restart_app(app: tauri::AppHandle) {
 fn widget_show(app: tauri::AppHandle) {
     use tauri::{LogicalPosition, WebviewUrl, WebviewWindowBuilder};
 
+    RECORDING_ACTIVE.store(true, std::sync::atomic::Ordering::Relaxed);
     if let Some(win) = app.get_webview_window("recording-widget") {
         let _ = win.show();
         return;
@@ -291,13 +303,25 @@ mod macos_panel {
     }
 }
 
-/// Close the floating recording widget (recording stopped).
+/// Hide the floating recording widget (recording stopped). The panel is
+/// hidden, never closed: destroying the reclassed NSPanel throws an ObjC
+/// exception inside tao's window teardown (reproduced — close() aborted the
+/// whole app via __rust_foreign_exception; that was the v0.2.6 crash).
+/// Hidden, it's reused by the next widget_show and dies with the process on
+/// quit — hide/re-show/quit all verified crash-free.
 #[tauri::command]
 fn widget_hide(app: tauri::AppHandle) {
+    RECORDING_ACTIVE.store(false, std::sync::atomic::Ordering::Relaxed);
     if let Some(win) = app.get_webview_window("recording-widget") {
-        let _ = win.close();
+        let _ = win.hide();
     }
 }
+
+/// True while a recording is running (bracketed by widget_show/widget_hide).
+/// The mic monitor reads it so our own capture doesn't trigger the
+/// "Meeting Detected" popup.
+static RECORDING_ACTIVE: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
 
 /// Raise the main window and open the recording's meeting page (called by the
 /// widget's open button). Routed through Rust so it works even when the main
@@ -433,7 +457,11 @@ mod mic_monitor {
             loop {
                 std::thread::sleep(Duration::from_secs(2));
                 let active = mic_in_use();
-                if active && !was_active {
+                // Our own recording also flips the default input device to
+                // "running" — don't offer to start a meeting we're already in.
+                let own_recording =
+                    super::RECORDING_ACTIVE.load(std::sync::atomic::Ordering::Relaxed);
+                if active && !was_active && !own_recording {
                     let handle = app.clone();
                     let _ = app.run_on_main_thread(move || show_popup(&handle));
                 }
@@ -519,7 +547,7 @@ mod macos_titlebar {
                 // Double-click = the native titlebar action (zoom by default,
                 // or whatever the user set in System Settings); single click
                 // starts the window drag.
-                if unsafe { event.clickCount() } >= 2 {
+                if event.clickCount() >= 2 {
                     double_click_action(&window);
                 } else {
                     window.performWindowDragWithEvent(event);
@@ -530,14 +558,13 @@ mod macos_titlebar {
 
     fn double_click_action(window: &NSWindow) {
         use objc2_foundation::{ns_string, NSUserDefaults};
-        let action = unsafe {
-            NSUserDefaults::standardUserDefaults().stringForKey(ns_string!("AppleActionOnDoubleClick"))
-        };
-        let action = action.map(|s| s.to_string());
+        let action = NSUserDefaults::standardUserDefaults()
+            .stringForKey(ns_string!("AppleActionOnDoubleClick"))
+            .map(|s| s.to_string());
         match action.as_deref() {
-            Some("Minimize") => unsafe { window.miniaturize(None) },
+            Some("Minimize") => window.miniaturize(None),
             Some("None") => {}
-            _ => unsafe { window.performZoom(None) },
+            _ => window.performZoom(None),
         }
     }
 

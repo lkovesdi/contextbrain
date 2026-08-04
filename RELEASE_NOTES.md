@@ -1,4 +1,4 @@
-## What's new in v0.2.6
+## What's new in v0.2.7
 
-- The floating recording widget's buttons now work no matter what — including while the main window is minimized. The widget is a true non-activating panel (like Spotlight), so clicking it never yanks focus from what you're doing.
-- Clicking the Dock icon now always restores a minimized main window, even while the widget is showing.
+- Fixes a crash when stopping a recording — closing the floating widget could take the whole app down.
+- The "Meeting Detected" popup no longer appears for ContextBrain's own recordings.
