@@ -25,6 +25,12 @@ export async function GET() {
     scopes: ["usage:write"],
     time_to_live_in_seconds: 3600,
   });
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) {
+    console.error("[deepgram/token] createProjectKey failed:", error.message);
+    // The usual culprit: an API key without key-management rights (Deepgram
+    // 403 "does not have the required scope") — minting ephemeral keys needs
+    // a key created with the Administrator role.
+    return NextResponse.json({ error: `Deepgram: ${error.message}` }, { status: 500 });
+  }
   return NextResponse.json({ key: result.key });
 }

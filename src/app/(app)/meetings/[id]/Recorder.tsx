@@ -7,11 +7,10 @@ import {
   LiveTranscriptionEvents,
   type LiveClient,
 } from "@deepgram/sdk";
-import { Mic, SlidersHorizontal, Square } from "lucide-react";
+import { Mic, Square } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { Select } from "@/components/ui/Select";
 import { Popover } from "@/components/ui/Popover";
-import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
 
 type SpeakerNames = Record<string, string>;
@@ -24,6 +23,32 @@ type StoredLine = {
 };
 
 const TARGET_SAMPLE_RATE = 16000;
+
+// ----- Automatic audio processing ------------------------------------------
+// Nobody should have to know what "echo cancellation" means — the right
+// setting is derivable from where audio is playing:
+//  - Speakers: the other participants' voices reach the mic as room bleed,
+//    and that bleed IS our only signal for their side of the call. Echo
+//    cancellation would classify exactly that as echo and delete it, and
+//    noise suppression eats quiet far-field speech — so both stay off.
+//    Deepgram copes with noise far better than with missing audio.
+//  - Headphones: nothing from the call can reach the mic, so there is no
+//    bleed to preserve — noise suppression safely cleans the user's channel.
+// Output labels are only readable once mic permission exists; when unknown we
+// default to raw capture, the failure mode that never loses speech.
+const HEADPHONE_HINT =
+  /headphone|headset|airpod|ear ?pod|earbud|ear ?buds|wh-?1000|wf-?1000|arctis|hyperx|jabra|plantronics/i;
+
+async function usingHeadphones(): Promise<boolean> {
+  try {
+    const list = await navigator.mediaDevices.enumerateDevices();
+    const outs = list.filter((d) => d.kind === "audiooutput");
+    const def = outs.find((d) => d.deviceId === "default") ?? outs[0];
+    return !!def && HEADPHONE_HINT.test(def.label);
+  } catch {
+    return false;
+  }
+}
 
 function downsampleFloat32(
   input: Float32Array,
@@ -258,8 +283,10 @@ export function Recorder({
   }
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState<string>("");
-  const [echoCancel, setEchoCancel] = useState(false);
-  const [noiseSuppress, setNoiseSuppress] = useState(false);
+  // Devicechange listener that re-tunes the live track's processing when the
+  // output route changes mid-recording (e.g. AirPods connect). Held in a ref
+  // so teardownAudio can unregister it.
+  const retuneRef = useRef<(() => void) | null>(null);
   const [summaryState, setSummaryState] = useState<"idle" | "generating" | "error">(
     "idle"
   );
@@ -381,7 +408,10 @@ export function Recorder({
     setError(null);
     try {
       const res = await fetch("/api/deepgram/token");
-      if (!res.ok) throw new Error("Could not get Deepgram token");
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error ?? "Could not get Deepgram token");
+      }
       const { key } = await res.json();
 
       const dg = createDg(key);
@@ -401,9 +431,11 @@ export function Recorder({
       conn.on(LiveTranscriptionEvents.Open, async () => {
         let stream: MediaStream;
         try {
+          const headphones = await usingHeadphones();
           const constraints: MediaTrackConstraints = {
-            echoCancellation: echoCancel,
-            noiseSuppression: noiseSuppress,
+            echoCancellation: false,
+            noiseSuppression: headphones,
+            autoGainControl: true,
             channelCount: 1,
           };
           if (deviceId) constraints.deviceId = { exact: deviceId };
@@ -425,6 +457,19 @@ export function Recorder({
           return;
         }
         streamRef.current = stream;
+
+        // Headphones plugged in / pulled out mid-recording → re-tune the live
+        // track instead of making the user stop and restart.
+        const retune = () => {
+          void usingHeadphones().then((hp) => {
+            streamRef.current
+              ?.getAudioTracks()[0]
+              ?.applyConstraints({ noiseSuppression: hp })
+              .catch(() => {});
+          });
+        };
+        retuneRef.current = retune;
+        navigator.mediaDevices?.addEventListener?.("devicechange", retune);
 
         const AudioCtx =
           window.AudioContext ||
@@ -555,6 +600,10 @@ export function Recorder({
   }
 
   function teardownAudio() {
+    if (retuneRef.current) {
+      navigator.mediaDevices?.removeEventListener?.("devicechange", retuneRef.current);
+      retuneRef.current = null;
+    }
     levelRef.current = 0;
     processorRef.current?.disconnect();
     sourceRef.current?.disconnect();
@@ -644,44 +693,6 @@ export function Recorder({
             ]}
           />
         </label>
-        <Popover
-          width={232}
-          trigger={
-            <Button
-              variant="icon"
-              size="sm"
-              aria-label="Audio settings"
-              title="Audio settings"
-            >
-              <SlidersHorizontal size={14} strokeWidth={1.6} />
-            </Button>
-          }
-        >
-          <div className="flex flex-col gap-[12px]">
-            <p className="font-mono text-[10px] uppercase tracking-[0.07em] text-slate-2 m-0">
-              Audio processing
-            </p>
-            <Checkbox
-              checked={echoCancel}
-              onChange={setEchoCancel}
-              disabled={recording}
-            >
-              Echo cancellation
-            </Checkbox>
-            <Checkbox
-              checked={noiseSuppress}
-              onChange={setNoiseSuppress}
-              disabled={recording}
-            >
-              Noise suppression
-            </Checkbox>
-            {recording && (
-              <p className="text-[11px] text-slate-2 leading-[1.4] m-0">
-                Stop recording to change these.
-              </p>
-            )}
-          </div>
-        </Popover>
       </div>
 
       {error && (

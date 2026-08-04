@@ -268,6 +268,9 @@ export function ArchitectureDiagram({
       style={{ height }}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
+        // Clicks on the zoom controls must not start a pan — capturing the
+        // pointer here would swallow the button's click event.
+        if ((e.target as HTMLElement).closest("button")) return;
         interactedRef.current = true;
         dragRef.current = { px: e.clientX, py: e.clientY, x: view.x, y: view.y };
         setDragging(true);
