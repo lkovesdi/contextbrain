@@ -120,6 +120,7 @@ export function Recorder({
   initialLines,
   initialSpeakerNames = {},
   initialSummaryStatus = null,
+  mode = "standard",
 }: {
   meetingId: string;
   title: string;
@@ -128,6 +129,8 @@ export function Recorder({
   // meetings.summary_status at render time — 'generating' means a server-side
   // run is already in flight (e.g. the user left mid-generation and came back).
   initialSummaryStatus?: string | null;
+  // 'prd' meetings run the scout + PRD pipeline on stop — longer, different copy.
+  mode?: string;
 }) {
   const { session, error, levelRef, start, stop, subscribeLines } = useRecording();
   const recording = session?.meetingId === meetingId;
@@ -421,7 +424,9 @@ export function Recorder({
       {summaryState === "generating" && (
         <p className="rounded-[6px] border border-mist bg-bone-2 px-3 py-2 text-[12.5px] text-slate-2 flex items-center gap-2">
           <span className="w-[6px] h-[6px] rounded-full bg-cortex [animation:mb-pulse_1.4s_infinite]" />
-          Generating summary with Claude Opus — this can take 30-60 seconds.
+          {mode === "prd"
+            ? "Writing the PRD — scouting your repos and drafting both renditions. Usually 2-3 minutes; you can leave, it finishes on its own."
+            : "Generating summary with Claude Opus — this can take 30-60 seconds. You can leave; it finishes on its own."}
         </p>
       )}
       {summaryState === "error" && (

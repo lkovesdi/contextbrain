@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/Button";
 import { Eyebrow } from "@/components/ui/typography";
 import { SummarySection } from "./SummarySection";
 import { MeetingTags } from "./MeetingTags";
+import { PrdSection } from "./PrdSection";
+import type { PrdArtifact } from "@/lib/prd";
 import type {
   CreatedTicket,
   SummaryExtrasData,
@@ -27,6 +29,7 @@ export function SummaryPreview({
   createdTickets,
   ticketProviders,
   tags,
+  prd = null,
 }: {
   meetingId: string;
   title: string;
@@ -40,6 +43,7 @@ export function SummaryPreview({
   createdTickets: CreatedTicket[];
   ticketProviders: TicketProvider[];
   tags: Tag[];
+  prd?: PrdArtifact | null;
 }) {
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-paper">
@@ -89,6 +93,9 @@ export function SummaryPreview({
               {summaryTitle}
             </h1>
           )}
+
+          {/* PRD-mode meetings lead with the PRD; the recap summary follows. */}
+          {prd && <PrdSection prd={prd} />}
 
           <SummarySection
             meetingId={meetingId}

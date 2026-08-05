@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { IntegrationCard } from "./IntegrationCard";
+import { AtlasCard } from "./AtlasCard";
 import { Eyebrow, PageHeading, PageSubhead } from "@/components/ui/typography";
 import { getToolkitLogos } from "@/lib/composio";
 
@@ -73,6 +74,10 @@ export default async function IntegrationsPage() {
     getToolkitLogos(),
   ]);
   const byProvider = new Map((rows ?? []).map((r) => [r.provider, r] as const));
+  const githubRow = byProvider.get("github");
+  const githubConnected =
+    !!githubRow &&
+    ((githubRow.metadata as { status?: string } | null)?.status ?? null) !== "pending";
 
   return (
     <div className="mx-auto w-full max-w-[880px] px-10 py-12">
@@ -104,6 +109,11 @@ export default async function IntegrationsPage() {
             />
           );
         })}
+      </div>
+
+      <div className="mt-[26px]">
+        <Eyebrow className="mb-[10px]">Repo atlas</Eyebrow>
+        <AtlasCard githubConnected={githubConnected} />
       </div>
     </div>
   );

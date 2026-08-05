@@ -1,13 +1,17 @@
 import { NextResponse, after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateAndStoreSummary } from "@/lib/summary";
+import { generatePrdFromMeeting } from "@/lib/prd";
 
 // Generation is deliberately fire-and-forget: POST validates, marks the
 // meeting summary_status='generating', schedules the real work with after(),
 // and returns 202 immediately — so stopping a recording never pins the user
 // to the page, and navigating away can't orphan the run. Clients observe
 // progress by polling GET.
-export const maxDuration = 120;
+//
+// PRD-mode meetings run the scout + PRD pipeline instead of the plain
+// summary — several model calls plus repo reads, hence the higher budget.
+export const maxDuration = 300;
 
 export async function POST(
   _req: Request,
@@ -22,7 +26,7 @@ export async function POST(
 
   const [{ data: meeting }, { data: transcriptProbe }, { data: noteProbe }] =
     await Promise.all([
-      supabase.from("meetings").select("id").eq("id", meetingId).single(),
+      supabase.from("meetings").select("id,mode").eq("id", meetingId).single(),
       supabase.from("transcripts").select("id").eq("meeting_id", meetingId).limit(1),
       supabase.from("notes").select("id").eq("meeting_id", meetingId).limit(1),
     ]);
@@ -43,7 +47,11 @@ export async function POST(
 
   after(async () => {
     try {
-      await generateAndStoreSummary(supabase, user.id, meetingId);
+      if (meeting.mode === "prd") {
+        await generatePrdFromMeeting(supabase, user.id, meetingId);
+      } else {
+        await generateAndStoreSummary(supabase, user.id, meetingId);
+      }
     } catch (e) {
       console.error("[summary] generation failed", e);
       await supabase

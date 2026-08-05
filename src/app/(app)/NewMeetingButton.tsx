@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Checkbox } from "@/components/ui/Checkbox";
 import { Input } from "@/components/ui/Input";
 import { Select } from "@/components/ui/Select";
 import { Modal, ModalHeader, ModalBody, ModalFooter } from "@/components/ui/Modal";
@@ -23,6 +24,7 @@ export function NewMeetingButton({ presets }: { presets: Preset[] }) {
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [presetId, setPresetId] = useState<string>("");
+  const [prdMode, setPrdMode] = useState(false);
   const [busy, setBusy] = useState(false);
 
   // Tags to attach to the new meeting. Kept as specs (not ids) so brand-new
@@ -80,6 +82,7 @@ export function NewMeetingButton({ presets }: { presets: Preset[] }) {
         body: JSON.stringify({
           title: title.trim() || undefined,
           context_preset_id: presetId || null,
+          mode: prdMode ? "prd" : "standard",
         }),
       });
       const json = await res.json();
@@ -207,6 +210,18 @@ export function NewMeetingButton({ presets }: { presets: Preset[] }) {
                 </div>
               )}
             </div>
+          </div>
+
+          <div className="rounded-[10px] border border-mist bg-bone-2 px-[12px] py-[10px]">
+            <Checkbox checked={prdMode} onChange={setPrdMode}>
+              <span className="flex min-w-0 flex-col">
+                <span className="text-[13px] text-ink">PRD mode</span>
+                <span className="text-[11.5px] leading-snug text-slate">
+                  For client feature calls — scouts your connected repos and writes a
+                  PM + engineering PRD instead of suggesting tickets.
+                </span>
+              </span>
+            </Checkbox>
           </div>
 
           <Select

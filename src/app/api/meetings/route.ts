@@ -7,6 +7,8 @@ const Body = z.object({
   title: z.string().optional(),
   context_preset_id: z.string().uuid().nullable().optional(),
   space_id: z.string().uuid().nullable().optional(),
+  // 'prd' turns the post-meeting generation into the scout + PRD pipeline.
+  mode: z.enum(["standard", "prd"]).optional(),
 });
 
 // Paged meetings list. `?q=` runs a trigram fuzzy search (single ranked page);
@@ -63,6 +65,7 @@ export async function POST(req: Request) {
       title: parsed.data.title || "Untitled meeting",
       context_preset_id: contextPresetId,
       space_id: parsed.data.space_id ?? null,
+      mode: parsed.data.mode ?? "standard",
     })
     .select("id")
     .single();

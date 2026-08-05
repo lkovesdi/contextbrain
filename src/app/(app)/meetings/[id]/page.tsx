@@ -11,6 +11,8 @@ import { InviteButton } from "./InviteButton";
 import { Eyebrow } from "@/components/ui/typography";
 import { SummarySection } from "./SummarySection";
 import { SummaryPreview } from "./SummaryPreview";
+import { PrdSection } from "./PrdSection";
+import type { PrdArtifact } from "@/lib/prd";
 import { MeetingTags } from "./MeetingTags";
 import type { ChipData } from "@/components/context/ContextChip";
 import type { Tag } from "@/lib/tags";
@@ -96,6 +98,7 @@ export default async function MeetingPage({
         createdTickets={ticketsForPreview ?? []}
         ticketProviders={ticketProviders}
         tags={previewTags}
+        prd={(meeting.prd ?? null) as PrdArtifact | null}
       />
     );
   }
@@ -204,7 +207,9 @@ export default async function MeetingPage({
               (meeting.speaker_names ?? {}) as Record<string, string>
             }
             initialSummaryStatus={meeting.summary_status ?? null}
+            mode={meeting.mode ?? "standard"}
           />
+          {meeting.prd && <PrdSection prd={meeting.prd as PrdArtifact} />}
           {meeting.summary && (
             <SummarySection
               meetingId={meeting.id}
