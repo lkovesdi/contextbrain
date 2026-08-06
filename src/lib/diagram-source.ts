@@ -1,4 +1,5 @@
 import { listRepoPaths, getFileContent } from "@/lib/github";
+import { scrubSecrets } from "@/lib/scrub";
 import type { DiagramRepoRef } from "@/lib/diagrams";
 
 // Builds the model's view of a repo set: per repo, the filtered file tree plus
@@ -87,7 +88,8 @@ async function digestRepo(userId: string, repo: DiagramRepoRef): Promise<string>
     );
     contents.forEach((content, j) => {
       if (!content || budget <= 0) return;
-      const clipped = content.slice(0, Math.min(PER_FILE_CHARS, budget));
+      // Not persisted, but this text goes into a model prompt — scrub anyway.
+      const clipped = scrubSecrets(content).slice(0, Math.min(PER_FILE_CHARS, budget));
       budget -= clipped.length;
       const truncNote =
         clipped.length < content.length ? ` (truncated, ${content.length} chars total)` : "";

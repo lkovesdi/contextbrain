@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { loadReadyCards, type RepoCard } from "@/lib/atlas";
 import { listRepoPaths, getFileContent } from "@/lib/github";
 import { findActiveConnection, fetchIntegrationContext } from "@/lib/composio";
+import { scrubSecrets } from "@/lib/scrub";
 import type { DiagramGraph } from "@/lib/diagrams";
 
 // PRD-mode generation: turn a client call into a grounded PRD.
@@ -316,7 +317,9 @@ async function deepScout(
       const content = await getFileContent(
         userId, repo.owner, repo.name, path, repo.default_branch
       ).catch(() => null);
-      if (content) fileSections.push(`--- ${path} ---\n${content.slice(0, SCOUT_FILE_CHARS)}`);
+      if (content) {
+        fileSections.push(`--- ${path} ---\n${scrubSecrets(content).slice(0, SCOUT_FILE_CHARS)}`);
+      }
     }
     repoSections.push(
       `### ${repo.owner}/${repo.name}\nCard: ${JSON.stringify(repo.card)}\n\nMost relevant paths:\n${treeSample}\n\nRelevant files:\n${fileSections.join("\n\n") || "(no keyword-matched files)"}`
@@ -326,7 +329,11 @@ async function deepScout(
   let jiraBlock = "";
   if (jiraConnected) {
     const jira = await fetchIntegrationContext(userId, "jira", intent.topic).catch(() => null);
-    if (jira) jiraBlock = `\n\n### Jira search for "${intent.topic}"\n${JSON.stringify(jira).slice(0, 2_500)}`;
+    if (jira) {
+      jiraBlock = `\n\n### Jira search for "${intent.topic}"\n${scrubSecrets(
+        JSON.stringify(jira)
+      ).slice(0, 2_500)}`;
+    }
   }
 
   const { object } = await generateObject({

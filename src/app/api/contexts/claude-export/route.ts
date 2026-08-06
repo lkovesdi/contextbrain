@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { embedBatch } from "@/lib/embed";
+import { scrubSecrets } from "@/lib/scrub";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -91,7 +92,10 @@ export async function POST(req: Request) {
     .single();
   if (ctxErr) return NextResponse.json({ error: ctxErr.message }, { status: 500 });
 
-  const allChunks = parsed.flatMap(chunkConvo);
+  // People paste keys into chats; scrub before the content is stored.
+  const allChunks = parsed
+    .flatMap(chunkConvo)
+    .map((c) => ({ ...c, content: scrubSecrets(c.content) }));
   const BATCH = 50;
   for (let i = 0; i < allChunks.length; i += BATCH) {
     const batch = allChunks.slice(i, i + BATCH);

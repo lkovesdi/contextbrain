@@ -12,7 +12,10 @@ function loadMermaid() {
       const mermaid = mod.default;
       mermaid.initialize({
         startOnLoad: false,
-        securityLevel: "loose",
+        // Default security level ("strict") runs mermaid's DOMPurify pass on
+        // the rendered SVG before it's injected below — diagram source can
+        // come from LLM-generated summaries and user-typed notes, so this
+        // must never be weakened to "loose" (which skips sanitization).
         theme: "base",
         themeVariables: {
           // SANCTIONED: mermaid bakes these into the SVG it generates, so they

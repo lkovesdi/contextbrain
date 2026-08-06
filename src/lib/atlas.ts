@@ -3,6 +3,7 @@ import { generateObject } from "ai";
 import { anthropicModel, MODEL } from "@/lib/llm";
 import { createClient } from "@/lib/supabase/server";
 import { searchUserRepos, listRepoPaths, getFileContent } from "@/lib/github";
+import { scrubSecrets } from "@/lib/scrub";
 
 // The repo atlas: a shallow, always-on map of every repo the user's GitHub
 // connection can see. One model-written "card" per repo — purpose, stack,
@@ -84,7 +85,9 @@ async function buildCard(
   const docSections: string[] = [];
   for (const p of rootDocs) {
     const content = await getFileContent(userId, owner, name, p, branch).catch(() => null);
-    if (content) docSections.push(`--- ${p} ---\n${content.slice(0, CARD_FILE_CHARS)}`);
+    if (content) {
+      docSections.push(`--- ${p} ---\n${scrubSecrets(content).slice(0, CARD_FILE_CHARS)}`);
+    }
   }
 
   const { object } = await generateObject({

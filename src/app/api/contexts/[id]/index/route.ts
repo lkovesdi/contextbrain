@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { embedBatch } from "@/lib/embed";
 import { chunkText } from "@/lib/chunk";
+import { scrubSecrets } from "@/lib/scrub";
 import type { WalkedFile } from "@/lib/github";
 import { collectorFor, repoLabelFor } from "@/lib/contexts/collectors";
 
@@ -99,7 +100,9 @@ export async function POST(
       perFileMeta?: Record<string, unknown>;
     }[] = [];
     for (const f of files) {
-      const labelled = `// ${f.path}\n${f.content}`;
+      // Chunks are stored verbatim in the DB — scrub credential-shaped
+      // strings first so a token committed to a repo never lands at rest.
+      const labelled = `// ${f.path}\n${scrubSecrets(f.content)}`;
       for (const piece of chunkText(labelled, 1500, 150)) {
         allChunks.push({ content: piece, path: f.path, perFileMeta: f.metadata });
       }

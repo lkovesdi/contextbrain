@@ -71,8 +71,10 @@ export function IntegrationCard({
   async function disconnect() {
     const ok = await confirm({
       title: `Disconnect ${label}?`,
-      message: "You can reconnect at any time.",
-      confirmLabel: "Disconnect",
+      message:
+        "Everything indexed from this provider (attached contexts and, for GitHub, the repo atlas) is deleted from ContextBrain too. You can reconnect and re-index at any time.",
+      confirmLabel: "Disconnect & delete data",
+      tone: "danger",
     });
     if (!ok) return;
     setBusy(true);
