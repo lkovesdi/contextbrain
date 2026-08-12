@@ -4,26 +4,25 @@ import { forwardRef, useImperativeHandle, useCallback } from "react";
 import type { AnimatedIconHandle, AnimatedIconProps } from "./types";
 import { motion, useAnimate } from "motion/react";
 
-const BookmarkIcon = forwardRef<AnimatedIconHandle, AnimatedIconProps>(
+const SettingsIcon = forwardRef<AnimatedIconHandle, AnimatedIconProps>(
   (
     { size = 24, color = "currentColor", strokeWidth = 2, className = "" },
     ref,
   ) => {
     const [scope, animate] = useAnimate();
 
-    // Story: the bookmark lifts, stamps down, and inks in solid — "saved".
-    // Stays filled while hovered; on leave the fill drains back out.
+    // Story: machinery at work — the gear spins continuously while
+    // hovered, then winds back to rest on leave.
     const start = useCallback(async () => {
       animate(
-        ".bookmark-body",
-        { y: [0, -2.5, 0.75, 0], scaleY: [1, 1.04, 0.94, 1] },
-        { duration: 0.45, ease: "easeOut" },
+        ".gear-rotor",
+        { rotate: 360 },
+        { duration: 1.6, ease: "linear", repeat: Infinity },
       );
-      animate(".bookmark-body", { fillOpacity: 1 }, { duration: 0.25, ease: "easeOut", delay: 0.15 });
     }, [animate]);
 
     const stop = useCallback(async () => {
-      animate(".bookmark-body", { y: 0, scaleY: 1, fillOpacity: 0 }, { duration: 0.25, ease: "easeInOut" });
+      animate(".gear-rotor", { rotate: 0 }, { duration: 0.4, ease: "easeInOut" });
     }, [animate]);
 
     useImperativeHandle(ref, () => ({ startAnimation: start, stopAnimation: stop }));
@@ -43,19 +42,15 @@ const BookmarkIcon = forwardRef<AnimatedIconHandle, AnimatedIconProps>(
         strokeLinecap="round"
         strokeLinejoin="round"
         className={`cursor-pointer ${className}`}
-        style={{ overflow: "visible" }}
       >
-        <motion.path
-          className="bookmark-body"
-          style={{ transformOrigin: "50% 0%" }}
-          fill="currentColor"
-          fillOpacity={0}
-          d="M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z"
-        />
+        <motion.g className="gear-rotor" style={{ transformOrigin: "center" }}>
+          <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
+          <circle cx="12" cy="12" r="3" />
+        </motion.g>
       </motion.svg>
     );
   },
 );
 
-BookmarkIcon.displayName = "BookmarkIcon";
-export default BookmarkIcon;
+SettingsIcon.displayName = "SettingsIcon";
+export default SettingsIcon;

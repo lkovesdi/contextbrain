@@ -4,26 +4,31 @@ import { forwardRef, useImperativeHandle, useCallback } from "react";
 import type { AnimatedIconHandle, AnimatedIconProps } from "./types";
 import { motion, useAnimate } from "motion/react";
 
-const BookmarkIcon = forwardRef<AnimatedIconHandle, AnimatedIconProps>(
+// Story: the mic is live — the capsule bounces like a VU meter picking
+// up audio while the pickup arc pulses with it. Loops while hovered.
+const MicIcon = forwardRef<AnimatedIconHandle, AnimatedIconProps>(
   (
     { size = 24, color = "currentColor", strokeWidth = 2, className = "" },
     ref,
   ) => {
     const [scope, animate] = useAnimate();
 
-    // Story: the bookmark lifts, stamps down, and inks in solid — "saved".
-    // Stays filled while hovered; on leave the fill drains back out.
     const start = useCallback(async () => {
       animate(
-        ".bookmark-body",
-        { y: [0, -2.5, 0.75, 0], scaleY: [1, 1.04, 0.94, 1] },
-        { duration: 0.45, ease: "easeOut" },
+        ".mic-capsule",
+        { scaleY: [1, 1.14, 0.88, 1.1, 0.93, 1.06, 1] },
+        { duration: 1.1, ease: "easeInOut", repeat: Infinity },
       );
-      animate(".bookmark-body", { fillOpacity: 1 }, { duration: 0.25, ease: "easeOut", delay: 0.15 });
+      animate(
+        ".mic-arc",
+        { scale: [1, 1.08, 1, 1.06, 1] },
+        { duration: 1.1, ease: "easeInOut", repeat: Infinity },
+      );
     }, [animate]);
 
     const stop = useCallback(async () => {
-      animate(".bookmark-body", { y: 0, scaleY: 1, fillOpacity: 0 }, { duration: 0.25, ease: "easeInOut" });
+      animate(".mic-capsule", { scaleY: 1 }, { duration: 0.25, ease: "easeOut" });
+      animate(".mic-arc", { scale: 1 }, { duration: 0.25, ease: "easeOut" });
     }, [animate]);
 
     useImperativeHandle(ref, () => ({ startAnimation: start, stopAnimation: stop }));
@@ -45,17 +50,13 @@ const BookmarkIcon = forwardRef<AnimatedIconHandle, AnimatedIconProps>(
         className={`cursor-pointer ${className}`}
         style={{ overflow: "visible" }}
       >
-        <motion.path
-          className="bookmark-body"
-          style={{ transformOrigin: "50% 0%" }}
-          fill="currentColor"
-          fillOpacity={0}
-          d="M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z"
-        />
+        <path d="M12 19v3" />
+        <motion.path className="mic-arc" style={{ transformOrigin: "50% 55%" }} d="M19 10v2a7 7 0 0 1-14 0v-2" />
+        <motion.rect className="mic-capsule" style={{ transformOrigin: "50% 62.5%" }} x="9" y="2" width="6" height="13" rx="3" />
       </motion.svg>
     );
   },
 );
 
-BookmarkIcon.displayName = "BookmarkIcon";
-export default BookmarkIcon;
+MicIcon.displayName = "MicIcon";
+export default MicIcon;

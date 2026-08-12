@@ -127,6 +127,7 @@ pub fn run() {
             widget_show,
             widget_hide,
             widget_stop,
+            widget_ready,
             focus_main
         ]);
 
@@ -259,7 +260,11 @@ fn widget_show(app: tauri::AppHandle) {
     .resizable(false)
     .decorations(false)
     .transparent(true)
-    .shadow(false)
+    // Native shadow: macOS derives it from the window's alpha channel, so it
+    // hugs the pill's rounded corners. A CSS box-shadow can't work here — the
+    // window is exactly pill-sized, so it only shows up clipped square in the
+    // corner notches (the "dark corners" bug).
+    .shadow(true)
     .always_on_top(true)
     .visible_on_all_workspaces(true)
     .accept_first_mouse(true)
@@ -337,6 +342,35 @@ mod macos_panel {
         panel.setBecomesKeyOnlyIfNeeded(true);
         panel.setFloatingPanel(true);
     }
+
+    pub fn invalidate_shadow(ns_window_ptr: *mut std::ffi::c_void) {
+        if MainThreadMarker::new().is_none() {
+            return;
+        }
+        let win: &objc2_app_kit::NSWindow =
+            unsafe { &*(ns_window_ptr as *const objc2_app_kit::NSWindow) };
+        win.invalidateShadow();
+    }
+}
+
+/// Called by the widget page once its first frame has painted. AppKit computes
+/// a transparent window's shadow from the pixels on screen when it's shown —
+/// at that point the webview hasn't drawn yet, so the shadow is computed
+/// against an empty window and never recomputed. Invalidating after first
+/// paint makes it wrap the rounded pill.
+#[tauri::command]
+fn widget_ready(app: tauri::AppHandle) {
+    #[cfg(target_os = "macos")]
+    if let Some(win) = app.get_webview_window("recording-widget") {
+        let w = win.clone();
+        let _ = win.run_on_main_thread(move || {
+            if let Ok(ptr) = w.ns_window() {
+                macos_panel::invalidate_shadow(ptr);
+            }
+        });
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
 }
 
 /// Hide the floating recording widget (recording stopped). The panel is

@@ -11,6 +11,7 @@ import type { Provider } from "@/lib/composio";
 import type { ChipData } from "@/components/context/ContextChip";
 import type { Tag } from "@/lib/tags";
 import { Button } from "@/components/ui/Button";
+import { apiErrorText } from "@/lib/utils";
 import SendIcon from "@/components/icons/SendIcon";
 import type { AnimatedIconHandle } from "@/components/icons/types";
 
@@ -181,8 +182,8 @@ export function ChatPanel({
         }),
       });
       if (!res.ok || !res.body) {
-        const errText = await res.text().catch(() => "Chat failed");
-        setError(errText || "Chat failed");
+        const errText = await res.text().catch(() => "");
+        setError(apiErrorText(res.status, errText, "Chat failed"));
         setMessages((m) => m.slice(0, -1));
         return;
       }
@@ -212,8 +213,8 @@ export function ChatPanel({
         method: "POST",
       });
       if (!res.ok || !res.body) {
-        const errText = await res.text().catch(() => "Catch-up failed");
-        setError(errText || "Catch-up failed");
+        const errText = await res.text().catch(() => "");
+        setError(apiErrorText(res.status, errText, "Catch-up failed"));
         setMessages((m) => m.slice(0, -1));
         return;
       }

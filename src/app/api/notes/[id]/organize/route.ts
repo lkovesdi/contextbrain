@@ -1,4 +1,5 @@
 import { anthropicModel, MODEL } from "@/lib/llm";
+import { creditErrorResponse } from "@/lib/credits";
 import { generateText } from "ai";
 import { createClient } from "@/lib/supabase/server";
 import { embed } from "@/lib/embed";
@@ -53,6 +54,8 @@ export async function POST(
     });
     text = result.text.trim();
   } catch (e) {
+    const credit = creditErrorResponse(e);
+    if (credit) return credit;
     console.error("[notes] organize failed", e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Organize failed" },

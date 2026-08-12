@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { creditErrorResponse } from "@/lib/credits";
 import { findActiveConnection } from "@/lib/composio";
 import { scanStep } from "@/lib/atlas";
 
@@ -41,6 +42,8 @@ export async function POST(req: Request) {
     });
     return NextResponse.json(result);
   } catch (e) {
+    const credit = creditErrorResponse(e);
+    if (credit) return credit;
     console.error("[atlas] scan step failed", e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Scan failed" },

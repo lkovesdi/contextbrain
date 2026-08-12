@@ -1,4 +1,5 @@
 import { anthropicModel } from "@/lib/llm";
+import { creditErrorResponse } from "@/lib/credits";
 import { streamText } from "ai";
 import { retrieve, type RetrievedChunk, type ContextSelection } from "@/lib/retrieve";
 import { createClient } from "@/lib/supabase/server";
@@ -227,8 +228,19 @@ When a retrieved chunk includes a \`screenshot_url:\`, show the image inline wit
   );
   const modelId = approxTokens > 30_000 ? "claude-sonnet-4-6" : "claude-opus-4-8";
 
+  // Model construction is where the credit gate throws — before any streaming
+  // starts, so an out-of-credit user gets a clean 402 instead of a 500.
+  let model;
+  try {
+    model = await anthropicModel(user.id, modelId);
+  } catch (e) {
+    const r = creditErrorResponse(e);
+    if (r) return r;
+    throw e;
+  }
+
   const result = streamText({
-    model: await anthropicModel(user.id, modelId),
+    model,
     system,
     messages: cleanMessages,
     onFinish: async ({ text }) => {
@@ -243,6 +255,11 @@ When a retrieved chunk includes a \`screenshot_url:\`, show the image inline wit
       }
     },
   });
+
+  // Drain the provider stream even if the client disconnects mid-response —
+  // otherwise an abort skips onFinish (message persistence) AND the metering
+  // middleware's usage debit, making "stop generating" a free Opus call.
+  result.consumeStream();
 
   return result.toTextStreamResponse();
 }

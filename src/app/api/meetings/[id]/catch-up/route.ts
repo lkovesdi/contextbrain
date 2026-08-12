@@ -1,4 +1,5 @@
 import { anthropicModel } from "@/lib/llm";
+import { creditErrorResponse } from "@/lib/credits";
 import { streamText } from "ai";
 import { createClient } from "@/lib/supabase/server";
 
@@ -77,11 +78,26 @@ Do not add any other headings, preamble, or closing remarks.`;
   const approxTokens = Math.ceil((system.length + prompt.length) / 4);
   const modelId = approxTokens > 30_000 ? "claude-sonnet-4-6" : "claude-opus-4-8";
 
+  // Model construction is where the credit gate throws — before any streaming
+  // starts, so an out-of-credit user gets a clean 402 instead of a 500.
+  let model;
+  try {
+    model = await anthropicModel(user.id, modelId);
+  } catch (e) {
+    const r = creditErrorResponse(e);
+    if (r) return r;
+    throw e;
+  }
+
   const result = streamText({
-    model: await anthropicModel(user.id, modelId),
+    model,
     system,
     prompt,
   });
+
+  // Drain even on client disconnect so the metering middleware's usage debit
+  // always runs (an aborted stream would otherwise be a free platform call).
+  result.consumeStream();
 
   return result.toTextStreamResponse();
 }

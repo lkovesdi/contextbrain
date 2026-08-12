@@ -14,6 +14,7 @@ fn main() {
             "widget_show",
             "widget_hide",
             "widget_stop",
+            "widget_ready",
             "focus_main",
         ])),
     )

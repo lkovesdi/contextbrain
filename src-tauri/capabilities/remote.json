@@ -13,6 +13,7 @@
     "allow-widget-show",
     "allow-widget-hide",
     "allow-widget-stop",
+    "allow-widget-ready",
     "allow-focus-main"
   ]
 }

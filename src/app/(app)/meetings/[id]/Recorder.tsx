@@ -14,6 +14,7 @@ import {
   useRecording,
   type StoredLine,
 } from "@/components/recording/RecordingProvider";
+import { apiErrorText } from "@/lib/utils";
 
 type SpeakerNames = Record<string, string>;
 
@@ -168,6 +169,7 @@ export function Recorder({
         ? "error"
         : "idle"
   );
+  const [summaryErrorMsg, setSummaryErrorMsg] = useState<string | null>(null);
   const router = useRouter();
   const wellRef = useRef<HTMLDivElement | null>(null);
 
@@ -309,11 +311,17 @@ export function Recorder({
 
   function handleStop() {
     setSummaryState("generating");
+    setSummaryErrorMsg(null);
     stop()
-      .then((res) => {
+      .then(async (res) => {
         // 202 = generation started server-side; the poll effect below picks
-        // up the outcome. Anything else is an immediate failure.
-        if (res && !res.ok) setSummaryState("error");
+        // up the outcome. Anything else is an immediate failure — surface the
+        // server's message (notably the 402 out-of-credits one).
+        if (res && !res.ok) {
+          const body = await res.text().catch(() => "");
+          setSummaryErrorMsg(apiErrorText(res.status, body, ""));
+          setSummaryState("error");
+        }
       })
       .catch(() => setSummaryState("error"));
   }
@@ -431,7 +439,7 @@ export function Recorder({
       )}
       {summaryState === "error" && (
         <p className="rounded-[6px] border border-pulse bg-pulse-tint px-3 py-2 text-[12.5px] text-pulse-ink">
-          Summary failed. You can retry later from this page.
+          {summaryErrorMsg || "Summary failed. You can retry later from this page."}
         </p>
       )}
 

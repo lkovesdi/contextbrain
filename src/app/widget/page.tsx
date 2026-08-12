@@ -71,6 +71,20 @@ export default function RecordingWidget() {
     return () => clearInterval(t);
   }, []);
 
+  // The shell computes the transparent window's native shadow before the
+  // webview has painted; nudge it to recompute once the pill is on screen.
+  // Double rAF: the first callback runs before its frame paints.
+  useEffect(() => {
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => tauriInvoke("widget_ready"));
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
+  }, []);
+
   return (
     <>
       {/* This window floats transparent over the desktop — the page must not
@@ -78,13 +92,15 @@ export default function RecordingWidget() {
       <style>{`html, body { background: transparent !important; }`}</style>
       <div
         data-tauri-drag-region
-        className="fixed inset-0 flex items-center gap-3 rounded-[16px] border border-float-border bg-float pl-4 pr-2 shadow-[0_12px_36px_rgba(0,0,0,0.45)] select-none"
+        className="fixed inset-0 flex items-center gap-3 rounded-[16px] border border-float-border bg-float pl-4 pr-2 select-none"
       >
         <span className="pointer-events-none relative flex h-[8px] w-[8px] flex-shrink-0">
           <span className="absolute inline-flex h-full w-full rounded-full bg-pulse opacity-60 [animation:mb-pulse_1.4s_infinite]" />
           <span className="relative inline-flex h-[8px] w-[8px] rounded-full bg-pulse" />
         </span>
-        <span className="pointer-events-none">
+        {/* flex, not inline: an inline wrapper puts the meter on the text
+            baseline inside a full line box, floating it ~2px above center */}
+        <span className="pointer-events-none flex">
           <MiniWaveform active={!!session} levelRef={levelRef} barClassName="bg-float-ink" />
         </span>
         <span className="pointer-events-none font-mono text-[12px] tabular-nums text-float-ink-2">

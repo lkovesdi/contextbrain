@@ -12,7 +12,8 @@ export default async function SettingsPage() {
         <PageHeading>Settings</PageHeading>
         <PageSubhead>
           Bring your own API keys. When a key is set and enabled it runs your
-          calls on your billing; otherwise ContextBrain&apos;s platform key is used.
+          calls on your billing; otherwise ContextBrain&apos;s platform key is
+          used and usage draws down your credit balance.
         </PageSubhead>
       </header>
       <SettingsPanel initial={status} />

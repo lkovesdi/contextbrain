@@ -26,3 +26,19 @@ export function cn(...inputs: ClassValue[]): string {
   inputs.forEach(push);
   return out.join(" ");
 }
+
+// Turn a failed AI-route response body into user-facing text. A 402 carries
+// { error } JSON from creditErrorResponse (src/lib/credits.ts) — surface that
+// message rather than raw JSON; anything else falls through unchanged.
+export function apiErrorText(status: number, body: string, fallback: string): string {
+  if (status === 402) {
+    try {
+      const parsed = JSON.parse(body) as { error?: string };
+      if (parsed.error) return parsed.error;
+    } catch {
+      /* not JSON — use the default message below */
+    }
+    return "Out of credits. Buy more in Settings, or add your own API key.";
+  }
+  return body || fallback;
+}

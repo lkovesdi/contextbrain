@@ -4,26 +4,31 @@ import { forwardRef, useImperativeHandle, useCallback } from "react";
 import type { AnimatedIconHandle, AnimatedIconProps } from "./types";
 import { motion, useAnimate } from "motion/react";
 
-const BookmarkIcon = forwardRef<AnimatedIconHandle, AnimatedIconProps>(
+// Story: the lid springs open and stays up while data "writes" into the
+// cylinder — the middle ring redraws itself in a loop like a scan pass.
+const DatabaseIcon = forwardRef<AnimatedIconHandle, AnimatedIconProps>(
   (
     { size = 24, color = "currentColor", strokeWidth = 2, className = "" },
     ref,
   ) => {
     const [scope, animate] = useAnimate();
 
-    // Story: the bookmark lifts, stamps down, and inks in solid — "saved".
-    // Stays filled while hovered; on leave the fill drains back out.
     const start = useCallback(async () => {
       animate(
-        ".bookmark-body",
-        { y: [0, -2.5, 0.75, 0], scaleY: [1, 1.04, 0.94, 1] },
-        { duration: 0.45, ease: "easeOut" },
+        ".db-lid",
+        { y: -2.2 },
+        { type: "spring", stiffness: 350, damping: 14 },
       );
-      animate(".bookmark-body", { fillOpacity: 1 }, { duration: 0.25, ease: "easeOut", delay: 0.15 });
+      animate(
+        ".db-band",
+        { pathLength: [0, 1] },
+        { duration: 0.9, ease: "easeInOut", repeat: Infinity, repeatDelay: 0.25 },
+      );
     }, [animate]);
 
     const stop = useCallback(async () => {
-      animate(".bookmark-body", { y: 0, scaleY: 1, fillOpacity: 0 }, { duration: 0.25, ease: "easeInOut" });
+      animate(".db-lid", { y: 0 }, { duration: 0.25, ease: "easeInOut" });
+      animate(".db-band", { pathLength: 1 }, { duration: 0.3, ease: "easeOut" });
     }, [animate]);
 
     useImperativeHandle(ref, () => ({ startAnimation: start, stopAnimation: stop }));
@@ -45,17 +50,13 @@ const BookmarkIcon = forwardRef<AnimatedIconHandle, AnimatedIconProps>(
         className={`cursor-pointer ${className}`}
         style={{ overflow: "visible" }}
       >
-        <motion.path
-          className="bookmark-body"
-          style={{ transformOrigin: "50% 0%" }}
-          fill="currentColor"
-          fillOpacity={0}
-          d="M17 3a2 2 0 0 1 2 2v15a1 1 0 0 1-1.496.868l-4.512-2.578a2 2 0 0 0-1.984 0l-4.512 2.578A1 1 0 0 1 5 20V5a2 2 0 0 1 2-2z"
-        />
+        <motion.ellipse className="db-lid" cx="12" cy="5" rx="9" ry="3" />
+        <path d="M3 5V19A9 3 0 0 0 21 19V5" />
+        <motion.path className="db-band" d="M3 12A9 3 0 0 0 21 12" />
       </motion.svg>
     );
   },
 );
 
-BookmarkIcon.displayName = "BookmarkIcon";
-export default BookmarkIcon;
+DatabaseIcon.displayName = "DatabaseIcon";
+export default DatabaseIcon;

@@ -162,6 +162,37 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     sessionRef.current = session;
   }, [session]);
 
+  // ----- Transcription metering --------------------------------------------
+  // Stamped when the Deepgram socket actually opens (not when start() is
+  // called), cleared by the first reporter — so each session settles exactly
+  // once no matter how it ends (Stop, mic denial, socket error/close, page
+  // unload). The server no-ops for BYOK users and clamps the duration.
+  const usageRef = useRef<{ meetingId: string; openedAt: number } | null>(null);
+
+  const reportUsage = useCallback((viaBeacon = false) => {
+    const u = usageRef.current;
+    usageRef.current = null;
+    if (!u) return;
+    const seconds = (Date.now() - u.openedAt) / 1000;
+    // Sub-3s sessions are blips (failed mic grab, instant stop) — skip.
+    if (seconds <= 3) return;
+    const payload = JSON.stringify({ seconds, meetingId: u.meetingId });
+    if (viaBeacon && typeof navigator.sendBeacon === "function") {
+      navigator.sendBeacon(
+        "/api/deepgram/usage",
+        new Blob([payload], { type: "application/json" })
+      );
+      return;
+    }
+    // Fire-and-forget; keepalive lets it survive the window closing.
+    fetch("/api/deepgram/usage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: payload,
+      keepalive: true,
+    }).catch(() => {});
+  }, []);
+
   const listenersRef = useRef<Set<LineListener>>(new Set());
   const subscribeLines = useCallback((cb: LineListener) => {
     listenersRef.current.add(cb);
@@ -213,6 +244,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
   const stop = useCallback(async (): Promise<Response | null> => {
     const s = sessionRef.current;
     teardownAudio();
+    reportUsage();
     connRef.current?.finish();
     connRef.current = null;
     sessionRef.current = null;
@@ -221,7 +253,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     tauriInvoke("widget_hide");
     if (!s) return null;
     return requestSummary(s.meetingId);
-  }, [postWidgetState, requestSummary]);
+  }, [postWidgetState, reportUsage, requestSummary]);
 
   const stopRef = useRef(stop);
   useEffect(() => {
@@ -246,6 +278,8 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       try {
         const res = await fetch("/api/deepgram/token");
         if (!res.ok) {
+          // Includes the 402 out-of-credits case — the server's message
+          // ("Out of credits…") lands in setError below via this throw.
           const body = await res.json().catch(() => ({}));
           throw new Error(body.error ?? "Could not get Deepgram token");
         }
@@ -266,6 +300,8 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         connRef.current = conn;
 
         conn.on(LiveTranscriptionEvents.Open, async () => {
+          // Billable time starts now — the socket is live.
+          usageRef.current = { meetingId, openedAt: Date.now() };
           let stream: MediaStream;
           try {
             const headphones = await usingHeadphones();
@@ -281,6 +317,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
             });
           } catch {
             setError("Microphone permission denied. Allow access and try again.");
+            reportUsage(); // elapsed ≈ 0s here, so this just clears the stamp
             conn.finish();
             connRef.current = null;
             sessionRef.current = null;
@@ -397,7 +434,18 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
             .catch((e) => console.error("transcript persist failed:", e));
         });
 
+        conn.on(LiveTranscriptionEvents.Close, () => {
+          // Server hangup, network drop, or our own finish() — transcription
+          // is over regardless of UI state, so settle the meter now. A no-op
+          // when stop() (or the error handler) already reported.
+          reportUsage();
+        });
+
         conn.on(LiveTranscriptionEvents.Error, (e: unknown) => {
+          // A live-socket error kills transcription (the message below tells
+          // the user to stop/restart) — end the billable window here rather
+          // than when they eventually press Stop.
+          reportUsage();
           const detail: Record<string, unknown> = {};
           if (e && typeof e === "object") {
             for (const k of ["type", "message", "code", "reason", "name", "error", "wasClean"]) {
@@ -424,7 +472,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         throw e;
       }
     },
-    [postWidgetState]
+    [postWidgetState, reportUsage]
   );
 
   // Widget bridge: the desktop pill window is a same-origin page, so state
@@ -476,6 +524,9 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
   // SPA route changes never fire pagehide, so navigation keeps recording.
   useEffect(() => {
     const onPageHide = () => {
+      // Settle the transcription meter via sendBeacon — the one transport
+      // guaranteed to outlive the page.
+      reportUsage(true);
       const s = sessionRef.current;
       if (!s) return;
       sessionRef.current = null;
@@ -483,7 +534,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     };
     window.addEventListener("pagehide", onPageHide);
     return () => window.removeEventListener("pagehide", onPageHide);
-  }, [requestSummary]);
+  }, [reportUsage, requestSummary]);
 
   return (
     <RecordingContext.Provider

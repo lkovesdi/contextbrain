@@ -2,6 +2,8 @@ import { NextResponse, after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { generateAndStoreSummary } from "@/lib/summary";
 import { generatePrdFromMeeting } from "@/lib/prd";
+import { assertCredits, creditErrorResponse } from "@/lib/credits";
+import { resolveKey } from "@/lib/settings";
 
 // Generation is deliberately fire-and-forget: POST validates, marks the
 // meeting summary_status='generating', schedules the real work with after(),
@@ -38,6 +40,21 @@ export async function POST(
       { error: "Nothing to summarize — no transcript or notes." },
       { status: 400 }
     );
+  }
+
+  // The LLM work runs after the response, so the credit gate must fire here:
+  // preflight platform-key users and 402 before anything is scheduled. A
+  // balance that runs out mid-generation still surfaces — the after() catch
+  // records the InsufficientCreditsError message in summary_error.
+  const { usingUserKey } = await resolveKey(user.id, "anthropic");
+  if (!usingUserKey) {
+    try {
+      await assertCredits(user.id);
+    } catch (e) {
+      const r = creditErrorResponse(e);
+      if (r) return r;
+      throw e;
+    }
   }
 
   await supabase

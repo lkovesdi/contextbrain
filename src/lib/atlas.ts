@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { generateObject } from "ai";
 import { anthropicModel, MODEL } from "@/lib/llm";
+import { InsufficientCreditsError } from "@/lib/credits";
 import { createClient } from "@/lib/supabase/server";
 import { searchUserRepos, listRepoPaths, getFileContent } from "@/lib/github";
 import { scrubSecrets } from "@/lib/scrub";
@@ -170,6 +171,10 @@ export async function scanStep(
         .eq("id", row.id);
       built += 1;
     } catch (e) {
+      // Out of credits is an account condition, not a repo failure — abort the
+      // whole step so the route can 402 instead of marking every repo errored.
+      // The row stays 'building', which counts as pending and gets retried.
+      if (e instanceof InsufficientCreditsError) throw e;
       console.error(`[atlas] card build failed for ${row.owner}/${row.name}:`, e);
       await supabase
         .from("repo_atlas")

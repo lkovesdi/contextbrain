@@ -3,6 +3,7 @@ import { z } from "zod";
 import { generateObject } from "ai";
 import { createClient } from "@/lib/supabase/server";
 import { anthropicModel, MODEL } from "@/lib/llm";
+import { creditErrorResponse } from "@/lib/credits";
 import { findActiveConnection } from "@/lib/composio";
 import { buildRepoDigest } from "@/lib/diagram-source";
 import {
@@ -119,6 +120,8 @@ export async function POST(
       prompt: `${prevBlock}<repo_digest>\n${digest}\n</repo_digest>`,
     });
   } catch (e) {
+    const credit = creditErrorResponse(e);
+    if (credit) return credit;
     console.error("[diagrams] generateObject failed", e);
     return NextResponse.json(
       { error: e instanceof Error ? e.message : "Diagram generation failed" },

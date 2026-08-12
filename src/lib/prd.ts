@@ -6,6 +6,7 @@ import { loadReadyCards, type RepoCard } from "@/lib/atlas";
 import { listRepoPaths, getFileContent } from "@/lib/github";
 import { findActiveConnection, fetchIntegrationContext } from "@/lib/composio";
 import { scrubSecrets } from "@/lib/scrub";
+import { InsufficientCreditsError } from "@/lib/credits";
 import type { DiagramGraph } from "@/lib/diagrams";
 
 // PRD-mode generation: turn a client call into a grounded PRD.
@@ -223,6 +224,10 @@ export async function generatePrdFromMeeting(
             });
             return memo;
           } catch (e) {
+            // Out of credits kills the whole run (every remaining call would
+            // fail the same way) — let it surface as the summary error instead
+            // of marking each research topic individually errored.
+            if (e instanceof InsufficientCreditsError) throw e;
             console.error(`[prd] scout failed for "${intent.topic}":`, e);
             await supabase.from("meeting_research").insert({
               meeting_id: meetingId,

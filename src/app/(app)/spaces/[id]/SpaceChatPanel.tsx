@@ -10,6 +10,7 @@ import { AssistantMarkdown } from "@/components/chat/AssistantMarkdown";
 import type { Provider } from "@/lib/composio";
 import type { ChipData } from "@/components/context/ContextChip";
 import { Button } from "@/components/ui/Button";
+import { apiErrorText } from "@/lib/utils";
 import { useConfirm } from "@/components/ui/ConfirmModal";
 import SendIcon from "@/components/icons/SendIcon";
 import type { AnimatedIconHandle } from "@/components/icons/types";
@@ -140,8 +141,8 @@ export function SpaceChatPanel({
         }),
       });
       if (!res.ok || !res.body) {
-        const errText = await res.text().catch(() => "Chat failed");
-        setError(errText || "Chat failed");
+        const errText = await res.text().catch(() => "");
+        setError(apiErrorText(res.status, errText, "Chat failed"));
         setMessages((m) => m.slice(0, -1));
         return;
       }
