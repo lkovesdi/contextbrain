@@ -75,11 +75,13 @@ export async function getBalanceUsdMicros(userId: string): Promise<number | null
   }
 }
 
-// Preflight gate for platform-key calls: definitively broke → 402; can't
-// tell → allow (the post-call debit still records usage).
-export async function assertCredits(userId: string): Promise<void> {
-  const balance = await getBalanceUsdMicros(userId);
-  if (balance !== null && balance <= 0) throw new InsufficientCreditsError();
+// Preflight gate for platform-key calls. TEMPORARILY DISABLED: the top-up
+// flow isn't finished, so blocking at zero would dead-end users. Usage is
+// still metered and the balance may go negative; restore the check below to
+// re-enable the gate.
+export async function assertCredits(_userId: string): Promise<void> {
+  // const balance = await getBalanceUsdMicros(_userId);
+  // if (balance !== null && balance <= 0) throw new InsufficientCreditsError();
 }
 
 type LedgerReason = "llm_usage" | "transcription_usage" | "purchase" | "adjustment";
