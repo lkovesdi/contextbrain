@@ -1,6 +1,6 @@
 [package]
 name = "contextbrain"
-version = "0.2.10"
+version = "0.2.11"
 description = "ContextBrain desktop"
 edition = "2021"
 rust-version = "1.77"
@@ -23,6 +23,10 @@ tauri-plugin-deep-link = "2"
 # OTA updater for desktop builds. Manifest lives on a GitHub Release asset;
 # signing key is project-scoped, not Apple's.
 tauri-plugin-updater = "2"
+# Opens URLs in the system default browser. The webview must never navigate to
+# external pages (OAuth flows) — there's no back button, so a failed flow would
+# strand the user outside the app.
+tauri-plugin-opener = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

@@ -5,6 +5,7 @@ pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_opener::init())
         .manage(PendingUpdate::default())
         .setup(|app| {
             // First-launch hook. Phase 2 will register the Swift audio sidecar.
