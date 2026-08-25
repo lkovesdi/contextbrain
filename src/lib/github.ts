@@ -81,6 +81,9 @@ export async function listUserOrgs(userId: string): Promise<GhOrg[]> {
   ensureSuccess(res);
   const data = unwrap(res);
   const items = Array.isArray(data) ? data : [];
+  if (items.length === 0) {
+    console.log("[github] /user/orgs raw:", JSON.stringify(res)?.slice(0, 1500));
+  }
   return (items as Array<Record<string, unknown>>)
     .map((o) => {
       const login = typeof o.login === "string" ? o.login : "";
@@ -100,11 +103,20 @@ export async function listUserOrgs(userId: string): Promise<GhOrg[]> {
 export async function listOrgsFromRepos(userId: string): Promise<GhOrg[]> {
   const res = await executeTool("GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER", {
     userId,
-    arguments: { per_page: 100, sort: "pushed" },
+    arguments: {
+      per_page: 100,
+      sort: "pushed",
+      // Explicit, in case the tool's default narrows to owned repos only.
+      affiliation: "owner,collaborator,organization_member",
+      visibility: "all",
+    },
   });
   ensureSuccess(res);
   const data = unwrap(res);
   const items = Array.isArray(data) ? data : [];
+  if (items.length === 0) {
+    console.log("[github] /user/repos raw:", JSON.stringify(res)?.slice(0, 1500));
+  }
   const byLogin = new Map<string, GhOrg>();
   for (const it of items as Array<Record<string, unknown>>) {
     const owner = it.owner as
