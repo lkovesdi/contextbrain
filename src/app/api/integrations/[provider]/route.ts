@@ -1,6 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser } from "@/lib/supabase/auth";
-import { findActiveConnection, type Provider } from "@/lib/composio";
+import {
+  deleteConnections,
+  findActiveConnection,
+  type Provider,
+} from "@/lib/composio";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 
@@ -115,6 +119,16 @@ export async function DELETE(
   const supabase = await createClient();
   const user = await getAuthUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  // Tear down Composio's connected account(s) too — a lingering ACTIVE
+  // connection makes the next Connect short-circuit ("already connected")
+  // instead of re-running OAuth. Best-effort: a Composio blip shouldn't trap
+  // the user in a connected state they asked to leave.
+  try {
+    await deleteConnections(user.id, provider as Provider);
+  } catch (e) {
+    console.error(`[integrations] composio teardown failed for ${provider}:`, e);
+  }
 
   const { error } = await supabase
     .from("integrations")

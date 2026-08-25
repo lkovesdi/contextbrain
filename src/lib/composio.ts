@@ -112,6 +112,34 @@ export async function findActiveConnection(userId: string, provider: Provider) {
   }
 }
 
+// Deletes every Composio connected account for this user+provider, whatever
+// its status. Disconnect must tear these down: a lingering ACTIVE connection
+// makes the next Connect short-circuit ("already connected") instead of
+// re-running OAuth — even when the user revoked the app on the provider's
+// side and the stored token is dead, since revocation never reaches Composio.
+export async function deleteConnections(
+  userId: string,
+  provider: Provider
+): Promise<number> {
+  const authConfigId = AUTH_CONFIG[provider];
+  if (!authConfigId) return 0;
+  const composio = getComposio();
+  const list = await composio.connectedAccounts.list({
+    userIds: [userId],
+    authConfigIds: [authConfigId],
+  });
+  let deleted = 0;
+  for (const item of list.items ?? []) {
+    try {
+      await composio.connectedAccounts.delete(item.id);
+      deleted++;
+    } catch (e) {
+      console.error(`composio.connectedAccounts.delete(${item.id}) failed:`, e);
+    }
+  }
+  return deleted;
+}
+
 export async function initiateConnection(
   userId: string,
   provider: Provider,
