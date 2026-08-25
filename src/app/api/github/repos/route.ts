@@ -16,12 +16,22 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "GitHub not connected" }, { status: 412 });
   }
 
+  // The integration can be pointed at an org (picker on the GitHub card);
+  // otherwise repo search covers the connected user's own repos.
+  const { data: row } = await supabase
+    .from("integrations")
+    .select("metadata")
+    .eq("user_id", user.id)
+    .eq("provider", "github")
+    .maybeSingle();
+  const org = (row?.metadata as { org?: string } | null)?.org ?? null;
+
   const url = new URL(req.url);
   const q = (url.searchParams.get("q") ?? "").trim();
 
   try {
-    // First pass: only search the user's own repos (or org repos they belong to).
-    const mine = await searchUserRepos(user.id, q, 30);
+    // First pass: only search repos in the selected account (org or personal).
+    const mine = await searchUserRepos(user.id, q, 30, org);
     if (mine.length >= 5 || q.length === 0) {
       return NextResponse.json({ repos: mine });
     }

@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAuthUser } from "@/lib/supabase/auth";
 import { findActiveConnection, type Provider } from "@/lib/composio";
 import { NextResponse } from "next/server";
+import { z } from "zod";
 
 // Status probe polled by the integrations page while an OAuth window is open.
 // Reconciles against Composio directly, so completion is detected even when
@@ -41,6 +42,59 @@ export async function GET(
   }
 
   return NextResponse.json({ status: row ? "pending" : "none" });
+}
+
+// GitHub-only for now: which account the integration reads repos from. null
+// means the connected user's personal repos; an org login scopes repo search
+// and atlas discovery to that org. Stored on the row's metadata so the whole
+// server side (repos route, atlas scan) reads one source of truth.
+const PatchBody = z.object({
+  org: z
+    .string()
+    .trim()
+    .regex(/^[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,38})$/, "Invalid organization name")
+    .nullable(),
+});
+
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ provider: string }> }
+) {
+  const { provider } = await params;
+  if (provider !== "github") {
+    return NextResponse.json({ error: "Not supported for this provider" }, { status: 400 });
+  }
+  const supabase = await createClient();
+  const user = await getAuthUser(supabase);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  const parsed = PatchBody.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.message }, { status: 400 });
+  }
+
+  const { data: row } = await supabase
+    .from("integrations")
+    .select("metadata")
+    .eq("user_id", user.id)
+    .eq("provider", provider)
+    .maybeSingle();
+  if (!row) {
+    return NextResponse.json({ error: "Not connected" }, { status: 404 });
+  }
+
+  const metadata = { ...((row.metadata as Record<string, unknown> | null) ?? {}) };
+  if (parsed.data.org) metadata.org = parsed.data.org;
+  else delete metadata.org;
+
+  const { error } = await supabase
+    .from("integrations")
+    .update({ metadata })
+    .eq("user_id", user.id)
+    .eq("provider", provider);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  return NextResponse.json({ ok: true, org: parsed.data.org });
 }
 
 // Data derived from a provider goes with the connection: disconnecting also

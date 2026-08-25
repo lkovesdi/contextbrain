@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { isTauri } from "@tauri-apps/api/core";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { Select, type SelectOption } from "@/components/ui/Select";
 import { useConfirm } from "@/components/ui/ConfirmModal";
 
 type Provider =
@@ -26,6 +27,7 @@ export function IntegrationCard({
   logoUrl,
   connected,
   pending,
+  githubOrg = null,
 }: {
   provider: Provider;
   label: string;
@@ -35,12 +37,81 @@ export function IntegrationCard({
   logoUrl?: string | null;
   connected: boolean;
   pending: boolean;
+  /** GitHub only: org login the integration is scoped to (null = personal). */
+  githubOrg?: string | null;
 }) {
   const router = useRouter();
   const confirm = useConfirm();
   const [busy, setBusy] = useState(false);
   const [waiting, setWaiting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // GitHub org picker — which account repo search & the atlas read from.
+  // "" encodes the personal account (Select values are strings).
+  const showOrgPicker = provider === "github" && connected;
+  const [orgValue, setOrgValue] = useState(githubOrg ?? "");
+  const [orgSaving, setOrgSaving] = useState(false);
+  const [accounts, setAccounts] = useState<{
+    login: string | null;
+    orgs: { login: string }[];
+    orgs_unavailable: boolean;
+  } | null>(null);
+
+  useEffect(() => {
+    if (!showOrgPicker) return;
+    let cancelled = false;
+    fetch("/api/github/orgs")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((json) => {
+        if (cancelled || !json) return;
+        setAccounts({
+          login: json.login ?? null,
+          orgs: Array.isArray(json.orgs) ? json.orgs : [],
+          orgs_unavailable: !!json.orgs_unavailable,
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [showOrgPicker]);
+
+  async function changeOrg(value: string) {
+    const prev = orgValue;
+    setOrgValue(value);
+    setOrgSaving(true);
+    try {
+      const res = await fetch("/api/integrations/github", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ org: value || null }),
+      });
+      if (!res.ok) {
+        setOrgValue(prev);
+        setError("Couldn't switch account — try again");
+        return;
+      }
+      setError(null);
+      router.refresh();
+    } finally {
+      setOrgSaving(false);
+    }
+  }
+
+  const orgOptions: SelectOption[] = accounts
+    ? [
+        {
+          value: "",
+          label: accounts.login ? `Personal (${accounts.login})` : "Personal account",
+        },
+        ...accounts.orgs.map((o) => ({ value: o.login, label: o.login })),
+        // Keep a stale selection visible (e.g. the org kicked the user out)
+        // instead of silently snapping the trigger back to the placeholder.
+        ...(orgValue && !accounts.orgs.some((o) => o.login === orgValue)
+          ? [{ value: orgValue, label: `${orgValue} (unavailable)` }]
+          : []),
+      ]
+    : [];
 
   async function connect() {
     setBusy(true);
@@ -156,6 +227,30 @@ export function IntegrationCard({
         <div className="text-[14px] font-semibold text-ink mb-[3px]">{label}</div>
         <div className="text-[12px] text-slate leading-[1.45]">{description}</div>
       </div>
+      {showOrgPicker && (
+        <div className="flex flex-col gap-[5px]">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-slate flex-shrink-0">Repos from</span>
+            <Select
+              size="sm"
+              fullWidth
+              aria-label="GitHub account or organization"
+              value={orgValue}
+              onChange={changeOrg}
+              options={orgOptions}
+              placeholder={accounts ? "Select account…" : "Loading accounts…"}
+              disabled={!accounts || orgSaving}
+            />
+          </div>
+          {accounts && accounts.orgs.length === 0 && (
+            <p className="text-[11px] text-slate m-0 leading-[1.45]">
+              {accounts.orgs_unavailable
+                ? "Couldn't list your organizations — reconnect to grant org access."
+                : "No orgs found. An org only appears once it approves the GitHub OAuth app (github.com → Settings → Applications)."}
+            </p>
+          )}
+        </div>
+      )}
       <div className="mt-auto flex items-center justify-between gap-2">
         {connected ? (
           <Badge tone="ok">Connected</Badge>

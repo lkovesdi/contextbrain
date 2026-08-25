@@ -93,8 +93,8 @@ export default async function IntegrationsPage() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[14px]">
         {PROVIDERS.map((p) => {
           const row = byProvider.get(p.id);
-          const status = (row?.metadata as { status?: string } | undefined)?.status ?? null;
-          const connected = !!row && status !== "pending";
+          const meta = row?.metadata as { status?: string; org?: string } | undefined;
+          const connected = !!row && (meta?.status ?? null) !== "pending";
           return (
             <IntegrationCard
               key={p.id}
@@ -105,7 +105,8 @@ export default async function IntegrationsPage() {
               logoBg={p.bg}
               logoUrl={logos[p.id] ?? null}
               connected={connected}
-              pending={status === "pending"}
+              pending={meta?.status === "pending"}
+              githubOrg={p.id === "github" ? (meta?.org ?? null) : null}
             />
           );
         })}

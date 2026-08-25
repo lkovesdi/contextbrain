@@ -41,21 +41,57 @@ function unwrap(res: unknown): unknown {
   return v;
 }
 
+// ----- Account / orgs ------------------------------------------------------
+
+export type GhOrg = {
+  login: string;
+  avatar_url: string | null;
+};
+
+export async function getAuthenticatedLogin(userId: string): Promise<string | null> {
+  const res = await executeTool("GITHUB_GET_THE_AUTHENTICATED_USER", { userId });
+  const data = unwrap(res) as { login?: unknown } | null;
+  return data && typeof data.login === "string" ? data.login : null;
+}
+
+// Orgs the connected account is a member of. GitHub only lists an org here
+// when the OAuth app has been granted/approved on it — so a missing org means
+// the grant is missing on GitHub's side, not a bug on ours.
+export async function listUserOrgs(userId: string): Promise<GhOrg[]> {
+  const res = await executeTool("GITHUB_LIST_ORGANIZATIONS_FOR_THE_AUTHENTICATED_USER", {
+    userId,
+    arguments: { per_page: 100 },
+  });
+  const data = unwrap(res);
+  const items = Array.isArray(data) ? data : [];
+  return (items as Array<Record<string, unknown>>)
+    .map((o) => {
+      const login = typeof o.login === "string" ? o.login : "";
+      if (!login) return null;
+      return {
+        login,
+        avatar_url: typeof o.avatar_url === "string" ? o.avatar_url : null,
+      };
+    })
+    .filter((o): o is GhOrg => !!o);
+}
+
 // ----- Repos ---------------------------------------------------------------
 
 // Composio's catalog doesn't expose a non-deprecated "list my repos" endpoint,
-// so we lean on GitHub's `user:@me` search qualifier — the same query string
-// covers both the empty-state browse ("show me my repos") and the typeahead
-// ("show me my repos matching 'foo'").
+// so we lean on GitHub's search qualifiers — the same query string covers both
+// the empty-state browse ("show me my repos") and the typeahead ("show me my
+// repos matching 'foo'"). `user:@me` only matches repos OWNED by the connected
+// user, so when the integration is pointed at an org we swap in `org:<name>`.
 export async function searchUserRepos(
   userId: string,
   query: string,
-  perPage = 30
+  perPage = 30,
+  org?: string | null
 ): Promise<GhRepo[]> {
+  const scope = org ? `org:${org}` : "user:@me";
   const trimmed = query.trim();
-  const q = trimmed
-    ? `${trimmed} user:@me`
-    : "user:@me sort:updated";
+  const q = trimmed ? `${trimmed} ${scope}` : `${scope} sort:updated`;
   return runSearch(userId, q, perPage);
 }
 

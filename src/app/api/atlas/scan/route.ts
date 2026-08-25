@@ -34,10 +34,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 });
   }
 
+  // Discovery honors the account the GitHub card is pointed at (org picker).
+  const { data: ghRow } = await supabase
+    .from("integrations")
+    .select("metadata")
+    .eq("user_id", user.id)
+    .eq("provider", "github")
+    .maybeSingle();
+  const org = (ghRow?.metadata as { org?: string } | null)?.org ?? null;
+
   try {
     const result = await scanStep(supabase, user.id, {
       discover: parsed.data.discover,
       rebuild: parsed.data.rebuild,
+      org,
     });
     return NextResponse.json(result);
   } catch (e) {

@@ -119,10 +119,10 @@ export type ScanResult = {
 export async function scanStep(
   supabase: SupabaseServer,
   userId: string,
-  opts: { discover: boolean; rebuild?: boolean }
+  opts: { discover: boolean; rebuild?: boolean; org?: string | null }
 ): Promise<ScanResult> {
   if (opts.discover) {
-    const repos = await searchUserRepos(userId, "", DISCOVER_LIMIT);
+    const repos = await searchUserRepos(userId, "", DISCOVER_LIMIT, opts.org);
     if (repos.length > 0) {
       await supabase.from("repo_atlas").upsert(
         repos.map((r) => ({
