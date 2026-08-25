@@ -3,7 +3,7 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronUp, Mic, Plus, Square, Zap } from "lucide-react";
+import { ChevronDown, ChevronUp, Mic, Plus, Square, Zap } from "lucide-react";
 import {
   ContextSelector,
   type Selection,
@@ -236,6 +236,83 @@ export function MeetingWorkspace({
     queueMicrotask(() => void handleStart());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [meetingId]);
+
+  // ── Transcript strip sizing ──────────────────────────────────────────────
+  // Drag the handle on the strip's bottom edge to resize; the chevron hides
+  // it entirely (a slim "Transcript" bar brings it back). Both persist.
+  const TICKER_HEIGHT_KEY = "mb_ticker_height";
+  const TICKER_HIDDEN_KEY = "mb_ticker_hidden";
+  const TICKER_DEFAULT_HEIGHT = 140;
+  const TICKER_MIN_HEIGHT = 48;
+  const TICKER_MAX_HEIGHT = 600;
+  const [tickerHeight, setTickerHeight] = useState(TICKER_DEFAULT_HEIGHT);
+  const [tickerHidden, setTickerHidden] = useState(false);
+  const tickerHeightRef = useRef(tickerHeight);
+  useEffect(() => {
+    tickerHeightRef.current = tickerHeight;
+  }, [tickerHeight]);
+  useEffect(() => {
+    queueMicrotask(() => {
+      if (typeof window === "undefined") return;
+      const saved = parseInt(
+        window.localStorage.getItem(TICKER_HEIGHT_KEY) ?? "",
+        10
+      );
+      if (
+        Number.isFinite(saved) &&
+        saved >= TICKER_MIN_HEIGHT &&
+        saved <= TICKER_MAX_HEIGHT
+      ) {
+        setTickerHeight(saved);
+      }
+      if (window.localStorage.getItem(TICKER_HIDDEN_KEY) === "1") {
+        setTickerHidden(true);
+      }
+    });
+  }, []);
+
+  function toggleTicker() {
+    setTickerHidden((hidden) => {
+      try {
+        window.localStorage.setItem(TICKER_HIDDEN_KEY, hidden ? "0" : "1");
+      } catch {
+        // localStorage can throw in private mode — non-fatal.
+      }
+      return !hidden;
+    });
+  }
+
+  function startTickerResize(e: React.MouseEvent) {
+    e.preventDefault();
+    const startY = e.clientY;
+    const startH = tickerHeightRef.current;
+    document.body.style.cursor = "ns-resize";
+    document.body.style.userSelect = "none";
+
+    function onMove(ev: MouseEvent) {
+      const next = Math.max(
+        TICKER_MIN_HEIGHT,
+        Math.min(TICKER_MAX_HEIGHT, startH + (ev.clientY - startY))
+      );
+      setTickerHeight(next);
+    }
+    function onUp() {
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      try {
+        window.localStorage.setItem(
+          TICKER_HEIGHT_KEY,
+          String(tickerHeightRef.current)
+        );
+      } catch {
+        // localStorage can throw in private mode — non-fatal.
+      }
+    }
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  }
 
   // ── Notes ────────────────────────────────────────────────────────────────
   // Notes interleave with the chat in the order things happened: each note
@@ -542,14 +619,51 @@ export function MeetingWorkspace({
         </Button>
       </div>
 
-      {/* Live transcript strip (~15%), older lines fading toward the top */}
-      <div className="flex-[0_0_15%] min-h-[104px] border-b border-mist bg-bone-2">
+      {/* Live transcript strip: older lines fade toward the top. Resizable by
+          its bottom-edge handle, collapsible via the chevron. Kept mounted
+          while hidden so live lines accumulated this session survive. */}
+      <div
+        style={{ height: tickerHidden ? 0 : tickerHeight }}
+        className={[
+          "relative flex-none overflow-hidden bg-bone-2",
+          tickerHidden ? "" : "border-b border-mist",
+        ].join(" ")}
+      >
         <TranscriptTicker
           meetingId={meetingId}
           initialLines={initialLines}
           initialSpeakerNames={initialSpeakerNames}
         />
+        <button
+          type="button"
+          onClick={toggleTicker}
+          aria-label="Hide transcript"
+          title="Hide transcript"
+          className="absolute right-[10px] top-[7px] z-10 grid h-[22px] w-[22px] cursor-pointer place-content-center rounded-[6px] bg-bone-2 text-slate-3 transition-colors hover:bg-paper-2 hover:text-ink"
+        >
+          <ChevronUp size={13} strokeWidth={1.7} />
+        </button>
+        {/* Drag down to grow the strip, up to shrink. Persists per-user. */}
+        <div
+          onMouseDown={startTickerResize}
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="Resize transcript"
+          className="group absolute inset-x-0 bottom-0 z-10 flex h-[8px] cursor-ns-resize items-center justify-center"
+        >
+          <div className="h-[3px] w-[36px] rounded-full bg-mist-2 transition-colors group-hover:bg-cortex" />
+        </div>
       </div>
+      {tickerHidden && (
+        <button
+          type="button"
+          onClick={toggleTicker}
+          className="flex w-full cursor-pointer items-center justify-center gap-1 border-b border-mist bg-bone-2 py-[4px] font-mono text-[10px] uppercase tracking-[0.07em] text-slate-2 transition-colors hover:text-ink"
+        >
+          Transcript
+          <ChevronDown size={11} strokeWidth={1.7} />
+        </button>
+      )}
 
       {/* The stream: summary/PRD (when present) → notes + chat interleaved in
           the order they happened. A note's anchor can exceed the message count

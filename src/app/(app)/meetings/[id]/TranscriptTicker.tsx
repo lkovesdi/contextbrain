@@ -174,6 +174,17 @@ export function TranscriptTicker({
     if (wellRef.current) wellRef.current.scrollTop = wellRef.current.scrollHeight;
   }, [stored]);
 
+  // Stay pinned to the newest lines when the strip is resized or un-hidden.
+  useEffect(() => {
+    const el = wellRef.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
   return (
     <div
       ref={wellRef}
