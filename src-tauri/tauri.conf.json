@@ -24,6 +24,7 @@
         "decorations": true,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true,
+        "acceptFirstMouse": true,
         "backgroundColor": "#000",
         "backgroundThrottling": "disabled"
       }

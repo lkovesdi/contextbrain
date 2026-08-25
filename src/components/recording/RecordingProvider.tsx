@@ -418,6 +418,17 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
           sink.gain.value = 0;
           processor.connect(sink);
           sink.connect(audioCtx.destination);
+
+          // Only now — socket live, mic captured, pipeline wired — flip the
+          // UI to "recording". Flipping earlier (as before) showed a live
+          // recording state while early speech was still being dropped.
+          const s: RecordingSession = { meetingId, title, startedAt: Date.now() };
+          sessionRef.current = s;
+          setSession(s);
+          postWidgetState(s);
+          tauriInvoke("widget_show");
+          startingRef.current = false;
+          setStarting(false);
         });
 
         conn.on(LiveTranscriptionEvents.Transcript, (data: {
@@ -464,6 +475,9 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         });
 
         conn.on(LiveTranscriptionEvents.Close, () => {
+          clearTimeout(openTimeout);
+          startingRef.current = false;
+          setStarting(false);
           // Server hangup, network drop, or our own finish() — transcription
           // is over regardless of UI state, so settle the meter now. A no-op
           // when stop() (or the error handler) already reported.
@@ -471,6 +485,11 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         });
 
         conn.on(LiveTranscriptionEvents.Error, (e: unknown) => {
+          clearTimeout(openTimeout);
+          // The socket may have failed before ever opening — un-stick any
+          // pending Record button.
+          startingRef.current = false;
+          setStarting(false);
           // A live-socket error kills transcription (the message below tells
           // the user to stop/restart) — end the billable window here rather
           // than when they eventually press Stop.
@@ -490,12 +509,9 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
           setError(`Deepgram: ${msg} — stop and start again to reconnect.`);
         });
 
-        const s: RecordingSession = { meetingId, title, startedAt: Date.now() };
-        sessionRef.current = s;
-        setSession(s);
-        postWidgetState(s);
-        tauriInvoke("widget_show");
       } catch (e) {
+        startingRef.current = false;
+        setStarting(false);
         console.error(e);
         setError(e instanceof Error ? e.message : "Failed to start recording.");
         throw e;
@@ -567,7 +583,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
 
   return (
     <RecordingContext.Provider
-      value={{ session, error, levelRef, start, stop, subscribeLines }}
+      value={{ session, starting, error, levelRef, start, stop, subscribeLines }}
     >
       {children}
       <RecordingPill />

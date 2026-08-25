@@ -123,7 +123,7 @@ export function MeetingWorkspace({
   // the meeting already has them.
   summarySlot?: React.ReactNode;
 }) {
-  const { session, error: micError, levelRef, start, stop } = useRecording();
+  const { session, starting, error: micError, levelRef, start, stop } = useRecording();
   const recording = session?.meetingId === meetingId;
   const recordingElsewhere = !!session && session.meetingId !== meetingId;
   const router = useRouter();
@@ -175,16 +175,20 @@ export function MeetingWorkspace({
   async function handleStart() {
     try {
       await start({ meetingId, title, deviceId: deviceId || undefined });
-      // Permission may have been granted just now — re-enumerate so labels
-      // (blank pre-permission) populate the picker.
-      navigator.mediaDevices
-        ?.enumerateDevices()
-        .then((list) => setDevices(list.filter((d) => d.kind === "audioinput")))
-        .catch(() => {});
     } catch {
       // start() already surfaced the error via the provider.
     }
   }
+
+  // Mic permission is granted by the time a session goes live — re-enumerate
+  // so device labels (blank pre-permission) populate the picker.
+  useEffect(() => {
+    if (!recording) return;
+    navigator.mediaDevices
+      ?.enumerateDevices()
+      .then((list) => setDevices(list.filter((d) => d.kind === "audioinput")))
+      .catch(() => {});
+  }, [recording]);
 
   function handleStop() {
     setSummaryState("generating");
@@ -957,12 +961,13 @@ export function MeetingWorkspace({
                 variant="ink"
                 size="md"
                 onClick={handleStart}
+                disabled={starting}
                 aria-label="Start recording"
                 title="Start recording"
                 leftIcon={<Mic size={14} strokeWidth={1.6} />}
                 className="rounded-full"
               >
-                Record
+                {starting ? "Starting…" : "Record"}
               </Button>
               {devicePicker}
             </div>

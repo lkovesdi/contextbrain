@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
-  useEffect,
   useRef,
   useState,
   type ForwardRefExoticComponent,
@@ -61,7 +60,13 @@ export function Sidebar({
   // server responds. Move the highlight optimistically on click and reconcile
   // with the real pathname when the navigation lands.
   const [pending, setPending] = useState<string | null>(null);
-  useEffect(() => setPending(null), [pathname]);
+  // Reconcile during render (not in an effect): the moment the route actually
+  // changes, the optimistic highlight yields to the real pathname.
+  const [seenPathname, setSeenPathname] = useState(pathname);
+  if (seenPathname !== pathname) {
+    setSeenPathname(pathname);
+    setPending(null);
+  }
   const current = pending ?? pathname;
 
   // In the desktop app the top --titlebar-inset (28px) of the window is the
