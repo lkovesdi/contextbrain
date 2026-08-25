@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { NextResponse } from "next/server";
 
 // Balance + recent ledger activity for the signed-in user. RLS scopes the
@@ -6,9 +7,7 @@ import { NextResponse } from "next/server";
 // the caller's own id (see 0020_credits.sql).
 export async function GET() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const [balanceRes, entriesRes] = await Promise.all([

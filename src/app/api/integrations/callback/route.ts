@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { NextResponse } from "next/server";
 
 // Standalone page for OAuth windows that hold no ContextBrain session (e.g.
@@ -38,9 +39,7 @@ function closeWindowPage(ok: boolean): string {
 export async function GET(request: Request) {
   const { origin, searchParams } = new URL(request.url);
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) {
     return new NextResponse(closeWindowPage(searchParams.get("status") === "success"), {
       headers: { "Content-Type": "text/html; charset=utf-8" },

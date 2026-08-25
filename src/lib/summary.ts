@@ -352,6 +352,36 @@ export async function generateAndStoreSummary(
           )}\n\nWhen extracting github_refs and a ref clearly belongs to one of these repos, set repo_hint to "owner/repo". If unclear, leave repo_hint null.\n</github_repos_available>\n\n`
       : "";
 
+  // Scope memos gathered by the live scout while the meeting ran — code
+  // evidence that lets the summary speak concretely about feasibility and
+  // touched components instead of paraphrasing the conversation.
+  const { data: researchRows } = await supabase
+    .from("meeting_research")
+    .select("topic,memo")
+    .eq("meeting_id", meetingId)
+    .eq("status", "done")
+    .order("created_at", { ascending: true });
+  const memos = (researchRows ?? [])
+    .map((r) => r.memo as {
+      topic?: string;
+      repos?: string[];
+      feasibility?: string;
+      summary?: string;
+      findings?: { claim: string; evidence: string }[];
+    } | null)
+    .filter((m): m is NonNullable<typeof m> => !!m);
+  const researchBlock =
+    memos.length > 0
+      ? `<code_research>\nWhile the meeting ran, a scout researched the asks below against the connected codebase. Use these memos to ground technical points — feasibility, affected repos, existing prior art — and carry file-path evidence inline where a bullet leans on it (e.g. "(repo: src/exports/csv.ts)"). NEVER invent paths not present here.\n\n${memos
+          .map(
+            (m) =>
+              `### ${m.topic ?? "ask"} [${m.feasibility ?? "?"}] — repos: ${(m.repos ?? []).join(", ") || "?"}\n${m.summary ?? ""}\n${(m.findings ?? [])
+                .map((f) => `- ${f.claim} (${f.evidence})`)
+                .join("\n")}`
+          )
+          .join("\n\n")}\n</code_research>\n\n`
+      : "";
+
   // Pinned images = explicit user picks from the chat (right-click → "Use in
   // summary"). These MUST be embedded — they're the user's own selections,
   // not retrieval guesses.
@@ -383,7 +413,7 @@ export async function generateAndStoreSummary(
     ? `<transcript>\n${transcriptForPrompt}\n</transcript>`
     : `<transcript>\n(No live transcript — base the summary on the user's notes.)\n</transcript>`;
 
-  const prompt = `${meetingContextBlock}${pinnedBlock}${designsBlock}${githubReposBlock}${notesBlock}${transcriptBlock}`;
+  const prompt = `${meetingContextBlock}${pinnedBlock}${designsBlock}${githubReposBlock}${researchBlock}${notesBlock}${transcriptBlock}`;
 
   const result = await generateObject({
     model: await anthropicModel(userId, "claude-opus-4-8"),

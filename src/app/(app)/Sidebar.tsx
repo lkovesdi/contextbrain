@@ -2,7 +2,13 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useRef, type ForwardRefExoticComponent, type RefAttributes } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ForwardRefExoticComponent,
+  type RefAttributes,
+} from "react";
 import MicIcon from "@/components/icons/MicIcon";
 import FolderIcon from "@/components/icons/FolderIcon";
 import DatabaseIcon from "@/components/icons/DatabaseIcon";
@@ -51,6 +57,13 @@ export function Sidebar({
 }) {
   const pathname = usePathname();
 
+  // The nav targets are dynamic routes, so the URL only changes once the
+  // server responds. Move the highlight optimistically on click and reconcile
+  // with the real pathname when the navigation lands.
+  const [pending, setPending] = useState<string | null>(null);
+  useEffect(() => setPending(null), [pathname]);
+  const current = pending ?? pathname;
+
   // In the desktop app the top --titlebar-inset (28px) of the window is the
   // native traffic-light / drag-strip zone — content there is covered and
   // clicks drag the window, so the brand must start below it.
@@ -72,7 +85,7 @@ export function Sidebar({
 
       <nav className="flex flex-col gap-[2px]">
         {NAV.map((item) => {
-          const active = item.match(pathname);
+          const active = item.match(current);
           return (
             <AnimatedNavItem
               key={item.href}
@@ -80,6 +93,7 @@ export function Sidebar({
               label={item.label}
               active={active}
               Icon={item.icon}
+              onNavigate={() => setPending(item.href)}
             />
           );
         })}
@@ -106,16 +120,25 @@ function AnimatedNavItem({
   label,
   active,
   Icon,
+  onNavigate,
 }: {
   href: string;
   label: string;
   active: boolean;
   Icon: AnimatedIcon;
+  onNavigate: () => void;
 }) {
   const iconRef = useRef<AnimatedIconHandle | null>(null);
   return (
     <Link
       href={href}
+      onClick={(e) => {
+        // Modified clicks open elsewhere — this window's pathname won't
+        // change, so don't move the highlight.
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0)
+          return;
+        onNavigate();
+      }}
       onMouseEnter={() => iconRef.current?.startAnimation()}
       onMouseLeave={() => iconRef.current?.stopAnimation()}
       className={ROW_CLASSES(active)}

@@ -40,6 +40,9 @@ type LineListener = (meetingId: string, line: StoredLine) => void;
 
 type RecordingContextValue = {
   session: RecordingSession | null;
+  /** True from the Record click until the socket is live and the mic is
+      captured (or the attempt fails) — drives busy states on Record buttons. */
+  starting: boolean;
   error: string | null;
   levelRef: { current: number };
   start: (opts: {
@@ -140,6 +143,8 @@ function tauriInvoke(cmd: string) {
 
 export function RecordingProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<RecordingSession | null>(null);
+  const [starting, setStarting] = useState(false);
+  const startingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
   const router = useRouter();
 
@@ -274,6 +279,10 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         if (sessionRef.current.meetingId === meetingId) return;
         throw new Error("Another meeting is already recording.");
       }
+      // Double-invoke guard while the socket is being set up.
+      if (startingRef.current) return;
+      startingRef.current = true;
+      setStarting(true);
       setError(null);
       try {
         const res = await fetch("/api/deepgram/token");
@@ -299,7 +308,25 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         });
         connRef.current = conn;
 
+        // If the socket never opens and no Error/Close ever fires (network
+        // black hole), un-stick the Record button.
+        const openTimeout = setTimeout(() => {
+          if (!startingRef.current) return;
+          startingRef.current = false;
+          setStarting(false);
+          setError("Timed out starting transcription — try again.");
+          conn.finish();
+          connRef.current = null;
+        }, 15_000);
+
         conn.on(LiveTranscriptionEvents.Open, async () => {
+          clearTimeout(openTimeout);
+          // A late open after the timeout bail (or after stop()) — this
+          // socket is already abandoned.
+          if (connRef.current !== conn) {
+            conn.finish();
+            return;
+          }
           // Billable time starts now — the socket is live.
           usageRef.current = { meetingId, openedAt: Date.now() };
           let stream: MediaStream;
@@ -316,6 +343,8 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
               audio: constraints,
             });
           } catch {
+            startingRef.current = false;
+            setStarting(false);
             setError("Microphone permission denied. Allow access and try again.");
             reportUsage(); // elapsed ≈ 0s here, so this just clears the stamp
             conn.finish();

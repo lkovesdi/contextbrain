@@ -2,6 +2,7 @@ import { anthropicModel } from "@/lib/llm";
 import { creditErrorResponse } from "@/lib/credits";
 import { streamText } from "ai";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 
 export const maxDuration = 60;
 
@@ -17,9 +18,7 @@ export async function POST(
 ) {
   const { id: meetingId } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) return new Response("Unauthorized", { status: 401 });
 
   const { data: transcripts } = await supabase

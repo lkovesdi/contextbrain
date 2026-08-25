@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { resolveKey } from "@/lib/settings";
 import { debitTranscription, TRANSCRIPTION_FLOOR_SECONDS } from "@/lib/credits";
 import { NextResponse } from "next/server";
@@ -10,9 +11,7 @@ import { NextResponse } from "next/server";
 // the clamp — and only against its own balance.
 export async function POST(req: Request) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   let body: { seconds?: unknown; meetingId?: unknown };

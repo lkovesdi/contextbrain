@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { verifyWorkEmail, suggestOrgName } from "@/lib/orgs";
 import { OnboardingFlow } from "./OnboardingFlow";
 
@@ -7,9 +8,7 @@ export const dynamic = "force-dynamic";
 
 export default async function OnboardingPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) redirect("/login");
 
   // Already in an org → nothing to set up.

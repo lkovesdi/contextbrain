@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { NewMeetingButton } from "../NewMeetingButton";
 import { MeetingsBrowser } from "../MeetingsBrowser";
 import { PageHeading, PageSubhead } from "@/components/ui/typography";
@@ -10,9 +11,7 @@ type Space = { id: string; name: string; icon: string | null };
 
 export default async function MeetingsPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
 
   const [firstPage, { data: presets }, { data: spaces }] = await Promise.all([
     user

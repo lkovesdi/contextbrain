@@ -5,6 +5,7 @@ import { useParams, useSearchParams } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { createClient } from "@/lib/supabase/client";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { LogoMark } from "@/components/ui/Logo";
@@ -130,8 +131,8 @@ export default function GuestMeetingPage() {
     setJoining(true);
     setJoinError(null);
     try {
-      const { data: sessionData } = await supabase.auth.getUser();
-      if (!sessionData.user) {
+      const sessionUser = await getAuthUser(supabase);
+      if (!sessionUser) {
         const { error: anonErr } = await supabase.auth.signInAnonymously();
         if (anonErr) {
           setJoinError(

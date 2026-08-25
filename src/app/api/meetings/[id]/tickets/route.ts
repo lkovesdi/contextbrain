@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { findActiveConnection } from "@/lib/composio";
 import { createIssue as createJiraIssue } from "@/lib/jira";
 import { createIssue as createLinearIssue } from "@/lib/linear";
@@ -42,9 +43,7 @@ export async function GET(
 ) {
   const { id: meetingId } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { data, error } = await supabase
@@ -62,9 +61,7 @@ export async function POST(
 ) {
   const { id: meetingId } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   // Ensure the meeting is owned by this user — the explicit check is cheap

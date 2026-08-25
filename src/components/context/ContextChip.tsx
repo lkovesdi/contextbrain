@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { Check, Square, X } from "lucide-react";
 
 export type ChipStatus = "queued" | "indexing" | "ready" | "error";
@@ -42,9 +42,16 @@ export function ContextChip({
   onUpdate,
 }: Props) {
   // Poll while indexing. Stop on ready/error. The chip is fully controlled —
-  // each tick fans the new snapshot back to the parent via onUpdate.
+  // each tick fans the new snapshot back to the parent via onUpdate. The
+  // callback lives in a ref so a parent passing an unstable identity can't
+  // retrigger the effect — each retrigger fires an immediate tick, which
+  // turned the 1500ms interval into a back-to-back request loop.
+  const onUpdateRef = useRef(onUpdate);
   useEffect(() => {
-    if (!poll || !onUpdate) return;
+    onUpdateRef.current = onUpdate;
+  });
+  useEffect(() => {
+    if (!poll) return;
     if (chip.status === "ready" || chip.status === "error") return;
     let cancelled = false;
     const tick = async () => {
@@ -55,7 +62,7 @@ export function ContextChip({
         if (!res.ok) return;
         const next = (await res.json()) as ChipData;
         if (cancelled) return;
-        onUpdate(next);
+        onUpdateRef.current?.(next);
       } catch {
         // network blip — try again next tick.
       }
@@ -66,7 +73,7 @@ export function ContextChip({
       cancelled = true;
       clearInterval(t);
     };
-  }, [chip.id, chip.status, poll, onUpdate]);
+  }, [chip.id, chip.status, poll]);
 
   const ready = chip.status === "ready";
   const error = chip.status === "error";

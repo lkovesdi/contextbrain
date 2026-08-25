@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { findActiveConnection } from "@/lib/composio";
 import { resolveFigmaUrl } from "@/lib/figma";
 
@@ -7,9 +8,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(req: Request) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await findActiveConnection(user.id, "figma"))) {
     return NextResponse.json({ error: "Figma not connected" }, { status: 412 });

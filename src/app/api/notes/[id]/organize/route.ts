@@ -2,6 +2,7 @@ import { anthropicModel, MODEL } from "@/lib/llm";
 import { creditErrorResponse } from "@/lib/credits";
 import { generateText } from "ai";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { embed } from "@/lib/embed";
 import { NextResponse } from "next/server";
 
@@ -24,9 +25,7 @@ export async function POST(
 ) {
   const { id } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { data: note, error } = await supabase

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Mic, Sparkles, MessagesSquare } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { LogoMarkLight } from "@/components/ui/Logo";
 import { Card } from "@/components/ui/Card";
 import { Eyebrow } from "@/components/ui/typography";
@@ -29,9 +30,7 @@ const FEATURES = [
 
 export default async function LandingPage() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (user) redirect("/meetings");
 
   return (

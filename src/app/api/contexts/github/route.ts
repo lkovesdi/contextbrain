@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { findActiveConnection } from "@/lib/composio";
 import { triggerIndexing } from "@/lib/contexts/trigger";
 
@@ -43,9 +44,7 @@ function sourceType(kind: z.infer<typeof Body>["kind"]) {
 
 export async function POST(req: Request) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const conn = await findActiveConnection(user.id, "github");

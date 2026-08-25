@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { NextResponse } from "next/server";
 
 // Quick-start entry point for the desktop "Meeting Detected" popup. The native
@@ -12,9 +13,7 @@ import { NextResponse } from "next/server";
 // for a one-shot launch target that's only reached via the popup.
 export async function GET(req: Request) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
 
   // Not signed in — bounce to login, then on to meetings.
   if (!user) {

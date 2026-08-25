@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { Sidebar } from "./Sidebar";
 import { ConfirmProvider } from "@/components/ui/ConfirmModal";
 import { DesktopAppPrompt } from "@/components/ui/DesktopAppPrompt";
@@ -11,9 +12,7 @@ export default async function AppLayout({
   children: React.ReactNode;
 }) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) redirect("/login");
 
   const { data: membership } = await supabase

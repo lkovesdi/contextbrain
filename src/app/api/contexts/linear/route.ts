@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { findActiveConnection } from "@/lib/composio";
 import { triggerIndexing } from "@/lib/contexts/trigger";
 
@@ -17,9 +18,7 @@ const Body = z.object({
 
 export async function POST(req: Request) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   if (!(await findActiveConnection(user.id, "linear"))) {
     return NextResponse.json({ error: "Linear not connected" }, { status: 412 });

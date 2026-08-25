@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { creditErrorResponse } from "@/lib/credits";
 import { findActiveConnection } from "@/lib/composio";
 import { scanStep } from "@/lib/atlas";
@@ -20,9 +21,7 @@ const Body = z.object({
 
 export async function POST(req: Request) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const conn = await findActiveConnection(user.id, "github");

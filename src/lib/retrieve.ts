@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { embed } from "./embed";
 import { fetchIntegrationContext, type Provider } from "./composio";
 
@@ -45,9 +46,7 @@ export async function retrieve(
   contextUserId?: string
 ): Promise<RetrievedChunk[]> {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) return [];
   const effectiveUserId = contextUserId ?? user.id;
 

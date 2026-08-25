@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { atlasCounts } from "@/lib/atlas";
 
 // Atlas status for the Integrations card: counts plus the repo list (name,
 // status, one-line purpose) so the UI can show what the map knows.
 export async function GET() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const [counts, { data: rows }] = await Promise.all([

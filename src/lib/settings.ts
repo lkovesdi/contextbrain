@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { decryptSecret } from "@/lib/crypto";
 
 // Providers whose keys a user can bring. Composio stays app-level (users connect
@@ -120,9 +121,7 @@ const EMPTY: ProviderStatus = { set: false, enabled: true, maskedSuffix: null };
 
 export async function getSettingsStatus(): Promise<SettingsStatus> {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) return { anthropic: { ...EMPTY }, deepgram: { ...EMPTY, projectId: null } };
 
   const { data } = await supabase

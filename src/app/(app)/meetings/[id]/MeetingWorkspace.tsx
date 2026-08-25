@@ -3,13 +3,14 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronUp, Mic, Plus, Square, Zap } from "lucide-react";
+import { ChevronDown, ChevronUp, Mic, Plus, Radar, Square, Zap } from "lucide-react";
 import {
   ContextSelector,
   type Selection,
 } from "@/components/context/ContextSelector";
 import { AssistantMarkdown } from "@/components/chat/AssistantMarkdown";
 import type { Provider } from "@/lib/composio";
+import type { ResearchRow } from "@/lib/scout";
 import type { ChipData } from "@/components/context/ContextChip";
 import type { Tag } from "@/lib/tags";
 import { Button } from "@/components/ui/Button";
@@ -90,6 +91,7 @@ export function MeetingWorkspace({
   initialLines,
   initialSpeakerNames = {},
   initialNotes,
+  initialResearch = [],
   chips,
   integrations,
   githubConnected,
@@ -109,6 +111,7 @@ export function MeetingWorkspace({
   initialLines: StoredLine[];
   initialSpeakerNames?: Record<string, string>;
   initialNotes: Note[];
+  initialResearch?: ResearchRow[];
   chips: ChipData[];
   integrations: string[];
   githubConnected: boolean;
@@ -395,6 +398,103 @@ export function MeetingWorkspace({
     setNoteAnchors((prev) => ({ ...prev, [noteId]: anchor }));
   }
 
+  // ── Live scout ───────────────────────────────────────────────────────────
+  // While recording (any mode), a server-side scout periodically reads the
+  // transcript, notices concrete asks, and researches them against the repo
+  // atlas. Findings surface in the stream as small trace entries — running
+  // ones as a pulsing "looking into…" line. GET polls are cheap row reads;
+  // POST steps (the actual scouting) run on a slower cadence.
+  const [research, setResearch] = useState<ResearchRow[]>(initialResearch);
+  const [researchAnchors, setResearchAnchors] = useState<Record<string, number>>(
+    () => Object.fromEntries(initialResearch.map((r) => [r.id, 0]))
+  );
+  const [scoutDisabled, setScoutDisabled] = useState(false);
+  const scoutBusyRef = useRef(false);
+
+  function mergeResearch(rows: ResearchRow[]) {
+    setResearchAnchors((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      for (const row of rows) {
+        if (next[row.id] === undefined) {
+          next[row.id] = messagesLenRef.current;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+    setResearch((prev) => {
+      const byId = new Map(prev.map((r) => [r.id, r]));
+      let changed = false;
+      const next = prev.slice();
+      for (const row of rows) {
+        const cur = byId.get(row.id);
+        if (!cur) {
+          next.push(row);
+          changed = true;
+        } else if (cur.status !== row.status) {
+          next[next.indexOf(cur)] = row;
+          changed = true;
+        }
+      }
+      return changed ? next : prev;
+    });
+  }
+  // router.refresh() (e.g. when the summary lands) re-renders the server page
+  // with fresh rows — fold them in rather than resetting local state.
+  useEffect(() => {
+    mergeResearch(initialResearch);
+     
+  }, [initialResearch]);
+
+  useEffect(() => {
+    if (!recording || !githubConnected || scoutDisabled) return;
+    let cancelled = false;
+
+    async function pull() {
+      try {
+        const res = await fetch(`/api/meetings/${meetingId}/scout`);
+        if (!res.ok || cancelled) return;
+        const j = (await res.json()) as { research?: ResearchRow[] };
+        mergeResearch(j.research ?? []);
+      } catch {
+        // transient network failure — next poll retries
+      }
+    }
+    async function step() {
+      if (scoutBusyRef.current) return;
+      scoutBusyRef.current = true;
+      try {
+        const res = await fetch(`/api/meetings/${meetingId}/scout`, {
+          method: "POST",
+        });
+        if (res.status === 402) {
+          setScoutDisabled(true);
+          return;
+        }
+        if (!res.ok || cancelled) return;
+        const j = (await res.json()) as { research?: ResearchRow[] };
+        mergeResearch(j.research ?? []);
+      } catch {
+        // transient network failure — next step retries
+      } finally {
+        scoutBusyRef.current = false;
+      }
+    }
+
+    const pollTimer = setInterval(pull, 12_000);
+    const stepTimer = setInterval(step, 150_000);
+    // First pass soon after recording starts so early asks surface quickly.
+    const kickoff = setTimeout(step, 25_000);
+    return () => {
+      cancelled = true;
+      clearInterval(pollTimer);
+      clearInterval(stepTimer);
+      clearTimeout(kickoff);
+    };
+     
+  }, [recording, githubConnected, scoutDisabled, meetingId]);
+
   // ── Chat ─────────────────────────────────────────────────────────────────
   const [selection, setSelection] = useState<Selection>(() =>
     defaultSelection(chips, integrations, presetSources, tags.map((t) => t.id))
@@ -679,6 +779,26 @@ export function MeetingWorkspace({
               if (arr) arr.push(n);
               else groups.set(idx, [n]);
             }
+            // Scout findings, deduped by topic (a post-stop PRD run re-scouts
+            // the same asks — show only the freshest memo per topic).
+            const latestByTopic = new Map<string, ResearchRow>();
+            for (const r of research) {
+              if (r.status !== "done" || !r.memo) continue;
+              const prev = latestByTopic.get(r.topic);
+              if (!prev || r.created_at > prev.created_at) {
+                latestByTopic.set(r.topic, r);
+              }
+            }
+            const scoutGroups = new Map<number, ResearchRow[]>();
+            for (const r of latestByTopic.values()) {
+              const idx = Math.min(researchAnchors[r.id] ?? 0, messages.length);
+              const arr = scoutGroups.get(idx);
+              if (arr) arr.push(r);
+              else scoutGroups.set(idx, [r]);
+            }
+            const scoutsAt = (idx: number) =>
+              scoutGroups.get(idx)?.map((r) => <ScoutFinding key={r.id} row={r} />) ??
+              null;
             const notesAt = (idx: number) => {
               const group = groups.get(idx);
               if (!group) {
@@ -729,6 +849,7 @@ export function MeetingWorkspace({
             return (
               <>
                 {notesAt(0)}
+                {scoutsAt(0)}
                 {messages.length === 0 && (
                   <p className="m-0 text-[13px] text-slate">
                     Ask anything about this meeting, your notes, or the selected
@@ -744,6 +865,7 @@ export function MeetingWorkspace({
                       onTogglePin={togglePin}
                     />
                     {notesAt(i + 1)}
+                    {scoutsAt(i + 1)}
                   </Fragment>
                 ))}
               </>
@@ -755,6 +877,17 @@ export function MeetingWorkspace({
               onClose={() => setNoteInputOpen(false)}
             />
           )}
+          {research
+            .filter((r) => r.status === "running")
+            .map((r) => (
+              <div
+                key={r.id}
+                className="flex items-center gap-[8px] font-mono text-[10px] uppercase tracking-[0.07em] text-slate-3"
+              >
+                <span className="h-[5px] w-[5px] rounded-full bg-cortex [animation:mb-pulse_1.4s_infinite]" />
+                Scout · looking into “{r.topic}”…
+              </div>
+            ))}
         </div>
       </div>
 
@@ -875,6 +1008,65 @@ export function MeetingWorkspace({
         </div>
       </div>
     </>
+  );
+}
+
+// A scout finding in the stream — deliberately small and muted, a thinking-
+// trace register rather than a content block. The one-line memo summary is
+// always visible; findings/risks sit behind a details toggle.
+const FEASIBILITY_DOT: Record<string, string> = {
+  clear: "bg-echo",
+  moderate: "bg-amber",
+  uncertain: "bg-pulse",
+};
+
+function ScoutFinding({ row }: { row: ResearchRow }) {
+  const memo = row.memo;
+  if (!memo) return null;
+  return (
+    <div className="flex flex-col gap-[4px] border-l-2 border-mist py-[2px] pl-[12px]">
+      <div className="flex flex-wrap items-center gap-x-[8px] gap-y-[2px] font-mono text-[9.5px] uppercase tracking-[0.08em] text-slate-3">
+        <Radar size={11} strokeWidth={1.7} className="text-cortex-ink" />
+        <span>Scout · {row.topic}</span>
+        <span
+          title={`Feasibility: ${memo.feasibility}`}
+          className={[
+            "inline-block h-[6px] w-[6px] rounded-full",
+            FEASIBILITY_DOT[memo.feasibility] ?? "bg-mist-2",
+          ].join(" ")}
+        />
+        {memo.repos.length > 0 && (
+          <span className="normal-case tracking-normal">
+            {memo.repos.join(" · ")}
+          </span>
+        )}
+      </div>
+      <p className="m-0 text-[12px] leading-[1.55] text-slate-2">{memo.summary}</p>
+      {(memo.findings.length > 0 || memo.risks.length > 0) && (
+        <details className="group">
+          <summary className="cursor-pointer list-none select-none font-mono text-[9.5px] uppercase tracking-[0.07em] text-slate-3 hover:text-ink">
+            <span className="group-open:hidden">
+              {memo.findings.length} finding{memo.findings.length === 1 ? "" : "s"}
+              {memo.risks.length > 0 ? ` · ${memo.risks.length} risk${memo.risks.length === 1 ? "" : "s"}` : ""}{" "}
+              ↓
+            </span>
+            <span className="hidden group-open:inline">Hide ↑</span>
+          </summary>
+          <ul className="m-0 mt-[4px] flex list-none flex-col gap-[3px] p-0 text-[11.5px] leading-[1.5] text-slate-2">
+            {memo.findings.map((f, i) => (
+              <li key={i}>
+                {f.claim} <span className="text-slate-3">({f.evidence})</span>
+              </li>
+            ))}
+            {memo.risks.map((r, i) => (
+              <li key={`r${i}`} className="text-amber-ink">
+                Risk: {r}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </div>
   );
 }
 

@@ -3,6 +3,7 @@ import { creditErrorResponse } from "@/lib/credits";
 import { streamText } from "ai";
 import { retrieve, type RetrievedChunk, type ContextSelection } from "@/lib/retrieve";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import type { Provider } from "@/lib/composio";
 import { z } from "zod";
 
@@ -56,9 +57,7 @@ export async function POST(req: Request) {
   const { messages, selection, meeting_id, space_id } = parsed.data;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) return new Response("Unauthorized", { status: 401 });
 
   // Drop any placeholder messages with empty content — the client seeds an
@@ -148,7 +147,7 @@ export async function POST(req: Request) {
     "[chat-diag] " +
       JSON.stringify({
         uid: user.id,
-        isAnonymous: (user as { is_anonymous?: boolean }).is_anonymous ?? null,
+        isAnonymous: user.isAnonymous,
         effectiveMeetingId: effectiveMeetingId ?? null,
         meetingOwner: diagMeetingOwner,
         contextUserId: contextUserId ?? null,

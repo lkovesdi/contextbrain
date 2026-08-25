@@ -2,10 +2,9 @@ import { z } from "zod";
 import { generateObject } from "ai";
 import { anthropicModel, MODEL } from "@/lib/llm";
 import { createClient } from "@/lib/supabase/server";
-import { loadReadyCards, type RepoCard } from "@/lib/atlas";
-import { listRepoPaths, getFileContent } from "@/lib/github";
-import { findActiveConnection, fetchIntegrationContext } from "@/lib/composio";
-import { scrubSecrets } from "@/lib/scrub";
+import { loadReadyCards } from "@/lib/atlas";
+import { findActiveConnection } from "@/lib/composio";
+import { deepScout, IntentsOut, type ScopeMemo } from "@/lib/scout";
 import { InsufficientCreditsError } from "@/lib/credits";
 import type { DiagramGraph } from "@/lib/diagrams";
 
@@ -26,22 +25,6 @@ type SupabaseServer = Awaited<ReturnType<typeof createClient>>;
 
 // ----- Stage schemas --------------------------------------------------------
 
-const IntentsOut = z.object({
-  intents: z
-    .array(
-      z.object({
-        topic: z.string().min(3).max(80).describe("Short handle, e.g. 'CSV export for reports'."),
-        ask: z
-          .string()
-          .min(10)
-          .max(500)
-          .describe("What the client wants, one paragraph, including constraints/deadlines mentioned."),
-      })
-    )
-    .max(5)
-    .describe("Distinct feature asks / scope items raised in the meeting. Merge duplicates."),
-});
-
 const RouteOut = z.object({
   assignments: z.array(
     z.object({
@@ -59,27 +42,7 @@ const RouteOut = z.object({
   ),
 });
 
-const MemoSchema = z.object({
-  feasibility: z
-    .enum(["clear", "moderate", "uncertain"])
-    .describe("clear = existing patterns cover it; moderate = real work, known shape; uncertain = needs investigation."),
-  summary: z.string().max(500).describe("2-3 sentences a PM could read."),
-  findings: z
-    .array(
-      z.object({
-        claim: z.string().max(220),
-        evidence: z.string().max(200).describe("repo path, ticket key, or tree fact backing the claim."),
-      })
-    )
-    .max(8),
-  prior_art: z.array(z.string().max(220)).max(6).default([]),
-  risks: z.array(z.string().max(220)).max(6).default([]),
-  questions: z.array(z.string().max(220)).max(5).default([]),
-});
-export type ScopeMemo = z.infer<typeof MemoSchema> & {
-  topic: string;
-  repos: string[];
-};
+export type { ScopeMemo };
 
 const OpenQuestionSchema = z.object({
   audience: z.enum(["pm", "engineering"]),
@@ -286,103 +249,6 @@ Ground rules
 - Scope discipline: mark explicitly what is OUT of scope. A PRD that promises everything is a PRD that ships nothing.
 - open_questions is where uncertainty goes — not hedging inside the docs. Every assumption you were forced to make belongs there as a question, routed to the right audience. Client-preference and priority questions → pm; architectural choices and unknown constraints → engineering.
 - Don't pad. If the meeting only justified a one-page PRD, write a one-page PRD.`;
-
-// ----- Deep scout -----------------------------------------------------------
-
-const SCOUT_FILE_CHARS = 4_000;
-const SCOUT_FILES_MAX = 6;
-const SCOUT_TREE_LINES = 250;
-
-async function deepScout(
-  userId: string,
-  intent: { topic: string; ask: string },
-  repos: { owner: string; name: string; default_branch: string; card: RepoCard }[],
-  jiraConnected: boolean
-): Promise<ScopeMemo> {
-  const keywords = keywordSet(`${intent.topic} ${intent.ask}`);
-
-  const repoSections: string[] = [];
-  for (const repo of repos) {
-    const paths = await listRepoPaths(userId, repo.owner, repo.name, repo.default_branch).catch(
-      () => [] as { path: string; size: number }[]
-    );
-    const scored = paths
-      .map((p) => ({ path: p.path, score: pathScore(p.path, keywords) }))
-      .sort((a, b) => b.score - a.score);
-    const treeSample = scored
-      .slice(0, SCOUT_TREE_LINES)
-      .map((s) => s.path)
-      .join("\n");
-    const filePicks = scored
-      .filter((s) => s.score > 0)
-      .slice(0, SCOUT_FILES_MAX)
-      .map((s) => s.path);
-    const fileSections: string[] = [];
-    for (const path of filePicks) {
-      const content = await getFileContent(
-        userId, repo.owner, repo.name, path, repo.default_branch
-      ).catch(() => null);
-      if (content) {
-        fileSections.push(`--- ${path} ---\n${scrubSecrets(content).slice(0, SCOUT_FILE_CHARS)}`);
-      }
-    }
-    repoSections.push(
-      `### ${repo.owner}/${repo.name}\nCard: ${JSON.stringify(repo.card)}\n\nMost relevant paths:\n${treeSample}\n\nRelevant files:\n${fileSections.join("\n\n") || "(no keyword-matched files)"}`
-    );
-  }
-
-  let jiraBlock = "";
-  if (jiraConnected) {
-    const jira = await fetchIntegrationContext(userId, "jira", intent.topic).catch(() => null);
-    if (jira) {
-      jiraBlock = `\n\n### Jira search for "${intent.topic}"\n${scrubSecrets(
-        JSON.stringify(jira)
-      ).slice(0, 2_500)}`;
-    }
-  }
-
-  const { object } = await generateObject({
-    model: await anthropicModel(userId, MODEL.sonnet),
-    schema: MemoSchema,
-    system:
-      "You are a staff engineer scoping a feature request against real code evidence. Only claim what the evidence shows; unknowns become questions, not guesses. Findings must carry their evidence (a path, a ticket key, a tree fact).",
-    prompt: `## Feature ask\n${intent.topic}: ${intent.ask}\n\n## Evidence\n${
-      repoSections.join("\n\n") || "(no repos were routed for this ask)"
-    }${jiraBlock}`,
-  });
-
-  return {
-    ...object,
-    topic: intent.topic,
-    repos: repos.map((r) => `${r.owner}/${r.name}`),
-  };
-}
-
-const STOPWORDS = new Set([
-  "the", "and", "for", "with", "that", "this", "from", "want", "wants", "need",
-  "needs", "should", "would", "could", "have", "they", "them", "will", "when",
-  "what", "able", "into", "some", "more", "client", "feature", "support",
-]);
-
-function keywordSet(text: string): string[] {
-  return [
-    ...new Set(
-      text
-        .toLowerCase()
-        .split(/[^a-z0-9]+/)
-        .filter((w) => w.length > 3 && !STOPWORDS.has(w))
-    ),
-  ].slice(0, 12);
-}
-
-function pathScore(path: string, keywords: string[]): number {
-  const p = path.toLowerCase();
-  let score = 0;
-  for (const k of keywords) if (p.includes(k)) score += 2;
-  // Light preference for source over assets/config when scores tie.
-  if (/\.(ts|tsx|js|py|go|rs|rb|java|sql|prisma)$/.test(p)) score += 1;
-  return score;
-}
 
 // ----- Diagram maps as routing signal ---------------------------------------
 

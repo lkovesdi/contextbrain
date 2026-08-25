@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { embedBatch } from "@/lib/embed";
 import { scrubSecrets } from "@/lib/scrub";
 import { NextResponse } from "next/server";
@@ -58,9 +59,7 @@ function chunkConvo(c: z.infer<typeof Convo>) {
 
 export async function POST(req: Request) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const formData = await req.formData();

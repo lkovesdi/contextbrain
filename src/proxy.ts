@@ -21,7 +21,10 @@ export async function proxy(request: NextRequest) {
       },
     }
   );
-  await supabase.auth.getUser();
+  // Keeps the session fresh (getClaims -> getSession refreshes an expired
+  // token and re-writes cookies) but verifies the JWT locally instead of
+  // calling the Auth server on every request like getUser() did.
+  await supabase.auth.getClaims();
   return response;
 }
 

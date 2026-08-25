@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUser } from "@/lib/supabase/auth";
 import { MeetingWorkspace } from "./MeetingWorkspace";
 import { MeetingTitle } from "./MeetingTitle";
 import { SpacePicker } from "./SpacePicker";
@@ -9,6 +10,7 @@ import { InviteButton } from "./InviteButton";
 import { SummarySection } from "./SummarySection";
 import { PrdSection } from "./PrdSection";
 import type { PrdArtifact } from "@/lib/prd";
+import type { ResearchRow } from "@/lib/scout";
 import type { ChipData } from "@/components/context/ContextChip";
 import type { Tag } from "@/lib/tags";
 
@@ -21,9 +23,7 @@ export default async function MeetingPage({
 }) {
   const { id } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUser(supabase);
   if (!user) return null;
 
   const { data: meeting } = await supabase
@@ -42,6 +42,7 @@ export default async function MeetingPage({
     presetRow,
     { data: createdTickets },
     { data: tagRows },
+    { data: researchRows },
   ] = await Promise.all([
     supabase
       .from("transcripts")
@@ -78,6 +79,11 @@ export default async function MeetingPage({
       .select("tag:tags(id,label_key,value)")
       .eq("meeting_id", id)
       .order("created_at", { ascending: true }),
+    supabase
+      .from("meeting_research")
+      .select("id,topic,status,memo,created_at")
+      .eq("meeting_id", id)
+      .order("created_at", { ascending: true }),
   ]);
 
   const presetSources = presetRow?.data?.sources ?? null;
@@ -92,7 +98,10 @@ export default async function MeetingPage({
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">
-      <header className="flex items-center justify-between gap-[14px] px-[22px] py-[14px] border-b border-mist bg-bone-2">
+      {/* pt inset: in the desktop app the top 28px is the native drag strip —
+          clicks there never reach the page, so the header must start below it
+          (same convention as the Sidebar). */}
+      <header className="flex items-center justify-between gap-[14px] px-[22px] py-[14px] pt-[calc(14px+var(--titlebar-inset,0px))] border-b border-mist bg-bone-2">
         <div className="flex items-center gap-[14px] min-w-0 overflow-hidden">
           <Link
             href="/meetings"
@@ -131,6 +140,7 @@ export default async function MeetingPage({
           (meeting.speaker_names ?? {}) as Record<string, string>
         }
         initialNotes={notes ?? []}
+        initialResearch={(researchRows ?? []) as ResearchRow[]}
         chips={(contexts ?? []) as ChipData[]}
         integrations={integrationProviders}
         githubConnected={integrationProviders.includes("github")}
