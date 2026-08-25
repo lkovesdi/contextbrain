@@ -48,6 +48,14 @@ export async function GET() {
     if (!byLogin.has(o.login)) byLogin.set(o.login, o);
   }
 
+  // Breadcrumb for "why is my org missing" reports: shows which source
+  // produced what (null = the call failed and was logged above).
+  console.log("[github/orgs]", {
+    login,
+    memberOrgs: memberOrgs?.map((o) => o.login) ?? null,
+    repoOrgs: repoOrgs?.map((o) => o.login) ?? null,
+  });
+
   return NextResponse.json({
     login,
     orgs: [...byLogin.values()],

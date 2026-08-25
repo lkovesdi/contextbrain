@@ -59,7 +59,12 @@ export type GhOrg = {
 };
 
 export async function getAuthenticatedLogin(userId: string): Promise<string | null> {
-  const res = await executeTool("GITHUB_GET_THE_AUTHENTICATED_USER", { userId });
+  // `arguments` must be present even when empty — Composio's backend 400s on
+  // a payload that omits it ("Only one of 'text' or 'arguments'…").
+  const res = await executeTool("GITHUB_GET_THE_AUTHENTICATED_USER", {
+    userId,
+    arguments: {},
+  });
   ensureSuccess(res);
   const data = unwrap(res) as { login?: unknown } | null;
   return data && typeof data.login === "string" ? data.login : null;
