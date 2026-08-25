@@ -43,9 +43,13 @@ export async function GET() {
     }),
   ]);
 
+  // repoOrgs is "every distinct repo owner" (Composio strips owner.type, so
+  // org vs user is indistinguishable there) — drop the personal account here.
   const byLogin = new Map<string, GhOrg>();
   for (const o of [...(memberOrgs ?? []), ...(repoOrgs ?? [])]) {
-    if (!byLogin.has(o.login)) byLogin.set(o.login, o);
+    if (login && o.login.toLowerCase() === login.toLowerCase()) continue;
+    const key = o.login.toLowerCase();
+    if (!byLogin.has(key)) byLogin.set(key, o);
   }
 
   // Breadcrumb for "why is my org missing" reports: shows which source

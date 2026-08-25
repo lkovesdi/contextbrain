@@ -58,6 +58,18 @@ export type GhOrg = {
   avatar_url: string | null;
 };
 
+// Composio wraps list responses in a named collection key (`{ organizations:
+// [...] }`, `{ repositories: [...] }`) rather than a bare array like GitHub's
+// own API — accept either shape.
+function pluckList(data: unknown, key: string): unknown[] {
+  if (Array.isArray(data)) return data;
+  if (data && typeof data === "object") {
+    const v = (data as Record<string, unknown>)[key];
+    if (Array.isArray(v)) return v;
+  }
+  return [];
+}
+
 export async function getAuthenticatedLogin(userId: string): Promise<string | null> {
   // `arguments` must be present even when empty — Composio's backend 400s on
   // a payload that omits it ("Only one of 'text' or 'arguments'…").
@@ -79,8 +91,7 @@ export async function listUserOrgs(userId: string): Promise<GhOrg[]> {
     arguments: { per_page: 100 },
   });
   ensureSuccess(res);
-  const data = unwrap(res);
-  const items = Array.isArray(data) ? data : [];
+  const items = pluckList(unwrap(res), "organizations");
   if (items.length === 0) {
     console.log("[github] /user/orgs raw:", JSON.stringify(res)?.slice(0, 1500));
   }
@@ -112,17 +123,18 @@ export async function listOrgsFromRepos(userId: string): Promise<GhOrg[]> {
     },
   });
   ensureSuccess(res);
-  const data = unwrap(res);
-  const items = Array.isArray(data) ? data : [];
+  const items = pluckList(unwrap(res), "repositories");
   if (items.length === 0) {
     console.log("[github] /user/repos raw:", JSON.stringify(res)?.slice(0, 1500));
   }
+  // Composio trims the owner object to { id, login } (no `type`), so we can't
+  // tell orgs from user accounts here — callers exclude the personal login.
   const byLogin = new Map<string, GhOrg>();
   for (const it of items as Array<Record<string, unknown>>) {
     const owner = it.owner as
-      | { login?: string; type?: string; avatar_url?: string }
+      | { login?: string; avatar_url?: string }
       | undefined;
-    if (!owner?.login || owner.type !== "Organization") continue;
+    if (!owner?.login) continue;
     if (!byLogin.has(owner.login)) {
       byLogin.set(owner.login, {
         login: owner.login,
