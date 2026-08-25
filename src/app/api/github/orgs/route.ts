@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser } from "@/lib/supabase/auth";
 import { findActiveConnection } from "@/lib/composio";
-import { getAuthenticatedLogin, listUserOrgs } from "@/lib/github";
+import {
+  getAuthenticatedLogin,
+  listOrgsFromRepos,
+  listUserOrgs,
+  type GhOrg,
+} from "@/lib/github";
 
 export const dynamic = "force-dynamic";
 
@@ -20,22 +25,32 @@ export async function GET() {
     return NextResponse.json({ error: "GitHub not connected" }, { status: 412 });
   }
 
-  const [login, orgs] = await Promise.all([
+  // Two org sources merged: /user/orgs (needs read:org + app approval on the
+  // org) and org owners seen in /user/repos (works with the base repo scope).
+  // Either alone can be empty for scope/approval reasons the other covers.
+  const [login, memberOrgs, repoOrgs] = await Promise.all([
     getAuthenticatedLogin(user.id).catch((e) => {
       console.error("/api/github/orgs login fetch failed", e);
       return null;
     }),
-    // The orgs listing needs the `read:org` scope — older connections may
-    // predate it, so a failure degrades to "personal account only".
     listUserOrgs(user.id).catch((e) => {
-      console.error("/api/github/orgs orgs fetch failed", e);
+      console.error("/api/github/orgs /user/orgs fetch failed", e);
+      return null;
+    }),
+    listOrgsFromRepos(user.id).catch((e) => {
+      console.error("/api/github/orgs /user/repos fetch failed", e);
       return null;
     }),
   ]);
 
+  const byLogin = new Map<string, GhOrg>();
+  for (const o of [...(memberOrgs ?? []), ...(repoOrgs ?? [])]) {
+    if (!byLogin.has(o.login)) byLogin.set(o.login, o);
+  }
+
   return NextResponse.json({
     login,
-    orgs: orgs ?? [],
-    orgs_unavailable: orgs === null,
+    orgs: [...byLogin.values()],
+    orgs_unavailable: memberOrgs === null && repoOrgs === null,
   });
 }

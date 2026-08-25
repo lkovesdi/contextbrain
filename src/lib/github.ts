@@ -41,6 +41,16 @@ function unwrap(res: unknown): unknown {
   return v;
 }
 
+// Composio reports tool failures as `{ successful: false, error }` instead of
+// throwing — without this check a failed call reads as an empty result, which
+// hides real problems (e.g. a missing `read:org` scope looked like "no orgs").
+function ensureSuccess(res: unknown): void {
+  const r = res as ComposioResult;
+  if (r && typeof r === "object" && r.successful === false) {
+    throw new Error(r.error || "Composio tool call failed");
+  }
+}
+
 // ----- Account / orgs ------------------------------------------------------
 
 export type GhOrg = {
@@ -50,18 +60,20 @@ export type GhOrg = {
 
 export async function getAuthenticatedLogin(userId: string): Promise<string | null> {
   const res = await executeTool("GITHUB_GET_THE_AUTHENTICATED_USER", { userId });
+  ensureSuccess(res);
   const data = unwrap(res) as { login?: unknown } | null;
   return data && typeof data.login === "string" ? data.login : null;
 }
 
-// Orgs the connected account is a member of. GitHub only lists an org here
-// when the OAuth app has been granted/approved on it — so a missing org means
-// the grant is missing on GitHub's side, not a bug on ours.
+// Orgs the connected account is a member of, per GitHub's /user/orgs. Needs
+// the `read:org` scope and only lists orgs where the OAuth app is approved —
+// so this can come back empty even when the token can reach org repos.
 export async function listUserOrgs(userId: string): Promise<GhOrg[]> {
   const res = await executeTool("GITHUB_LIST_ORGANIZATIONS_FOR_THE_AUTHENTICATED_USER", {
     userId,
     arguments: { per_page: 100 },
   });
+  ensureSuccess(res);
   const data = unwrap(res);
   const items = Array.isArray(data) ? data : [];
   return (items as Array<Record<string, unknown>>)
@@ -74,6 +86,34 @@ export async function listUserOrgs(userId: string): Promise<GhOrg[]> {
       };
     })
     .filter((o): o is GhOrg => !!o);
+}
+
+// Scope-free fallback for org discovery: /user/repos includes repos from orgs
+// the user is a member of (affiliation defaults to owner,collaborator,
+// organization_member) with just the base repo scope. The distinct org owners
+// across the most recently pushed repos are the orgs the token can reach.
+export async function listOrgsFromRepos(userId: string): Promise<GhOrg[]> {
+  const res = await executeTool("GITHUB_LIST_REPOSITORIES_FOR_THE_AUTHENTICATED_USER", {
+    userId,
+    arguments: { per_page: 100, sort: "pushed" },
+  });
+  ensureSuccess(res);
+  const data = unwrap(res);
+  const items = Array.isArray(data) ? data : [];
+  const byLogin = new Map<string, GhOrg>();
+  for (const it of items as Array<Record<string, unknown>>) {
+    const owner = it.owner as
+      | { login?: string; type?: string; avatar_url?: string }
+      | undefined;
+    if (!owner?.login || owner.type !== "Organization") continue;
+    if (!byLogin.has(owner.login)) {
+      byLogin.set(owner.login, {
+        login: owner.login,
+        avatar_url: owner.avatar_url ?? null,
+      });
+    }
+  }
+  return [...byLogin.values()];
 }
 
 // ----- Repos ---------------------------------------------------------------
