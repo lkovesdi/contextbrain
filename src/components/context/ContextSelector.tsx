@@ -36,6 +36,8 @@ export function ContextSelector({
   githubConnected: _githubConnected,
   presetName,
   tags = [],
+  compact = false,
+  align = "start",
 }: {
   selection: Selection;
   setSelection: (s: Selection) => void;
@@ -48,6 +50,10 @@ export function ContextSelector({
   /** Tags already applied to this meeting — seed the picker's display so the
    *  pre-selected chips render without waiting on the library fetch. */
   tags?: Tag[];
+  /** Icon-only trigger for tight rows; the summary moves into the tooltip and
+   *  a dot marks that sources are selected. */
+  compact?: boolean;
+  align?: "start" | "end";
 }) {
   const [chips, setChips] = useState<ChipData[]>(initialChips);
 
@@ -181,33 +187,52 @@ export function ContextSelector({
 
   return (
     <Popover
-      align="start"
+      align={align}
       width={400}
       className="max-h-[70vh] overflow-y-auto"
       trigger={
-        <button
-          type="button"
-          className="inline-flex items-center gap-[8px] rounded-[8px] border border-mist bg-bone-2 px-[12px] py-[7px] cursor-pointer transition-colors hover:bg-paper-2"
-        >
-          <SlidersHorizontal size={13} strokeWidth={1.7} className="text-slate-2" />
-          <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-slate-2">
-            Context
-          </span>
-          <span
-            className={[
-              "text-[11px]",
-              checkedChips.length > 0 && !allReady ? "text-slate" : "text-slate-2",
-            ].join(" ")}
+        compact ? (
+          <button
+            type="button"
+            aria-label="Context sources"
+            title={[
+              `Context: ${summaryText}`,
+              presetName ? `Preset: ${presetName}` : null,
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+            className="relative grid h-[30px] w-[30px] place-content-center rounded-[8px] border border-mist bg-bone-2 text-slate cursor-pointer transition-colors hover:bg-paper-2 hover:text-ink"
           >
-            {summaryText}
-          </span>
-          {presetName && (
-            <span className="text-[11px] font-medium text-cortex-ink bg-cortex-tint px-[7px] py-[2px] rounded-full">
-              {presetName}
+            <SlidersHorizontal size={14} strokeWidth={1.7} />
+            {summaryBits.length > 0 && (
+              <span className="absolute top-[4px] right-[4px] h-[6px] w-[6px] rounded-full bg-cortex" />
+            )}
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="inline-flex items-center gap-[8px] rounded-[8px] border border-mist bg-bone-2 px-[12px] py-[7px] cursor-pointer transition-colors hover:bg-paper-2"
+          >
+            <SlidersHorizontal size={13} strokeWidth={1.7} className="text-slate-2" />
+            <span className="font-mono text-[11px] uppercase tracking-[0.08em] text-slate-2">
+              Context
             </span>
-          )}
-          <ChevronDown size={13} strokeWidth={1.7} className="text-slate-2" />
-        </button>
+            <span
+              className={[
+                "text-[11px]",
+                checkedChips.length > 0 && !allReady ? "text-slate" : "text-slate-2",
+              ].join(" ")}
+            >
+              {summaryText}
+            </span>
+            {presetName && (
+              <span className="text-[11px] font-medium text-cortex-ink bg-cortex-tint px-[7px] py-[2px] rounded-full">
+                {presetName}
+              </span>
+            )}
+            <ChevronDown size={13} strokeWidth={1.7} className="text-slate-2" />
+          </button>
+        )
       }
     >
       <div className="flex flex-col gap-[12px]">

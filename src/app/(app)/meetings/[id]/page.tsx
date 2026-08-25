@@ -2,18 +2,14 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
-import { Recorder } from "./Recorder";
-import { Notes } from "./Notes";
-import { ChatPanel } from "./ChatPanel";
+import { MeetingWorkspace } from "./MeetingWorkspace";
 import { MeetingTitle } from "./MeetingTitle";
 import { SpacePicker } from "./SpacePicker";
 import { InviteButton } from "./InviteButton";
-import { Eyebrow } from "@/components/ui/typography";
 import { SummarySection } from "./SummarySection";
 import { SummaryPreview } from "./SummaryPreview";
 import { PrdSection } from "./PrdSection";
 import type { PrdArtifact } from "@/lib/prd";
-import { MeetingTags } from "./MeetingTags";
 import type { ChipData } from "@/components/context/ContextChip";
 import type { Tag } from "@/lib/tags";
 
@@ -191,62 +187,47 @@ export default async function MeetingPage({
         </div>
       </header>
 
-      <div className="flex items-center gap-[10px] px-[22px] py-[8px] border-b border-mist bg-bone-2">
-        <Eyebrow className="flex-shrink-0">Tags</Eyebrow>
-        <MeetingTags meetingId={meeting.id} initialTags={meetingTags} />
-      </div>
-
-      <div className="grid flex-1 min-h-0 grid-cols-1 lg:grid-cols-[1.15fr_1fr_1.2fr]">
-        <section className="min-h-0 overflow-y-auto border-b border-mist lg:border-b-0 lg:border-r p-[22px]">
-          <Eyebrow className="mb-[14px]">Recorder</Eyebrow>
-          <Recorder
-            meetingId={meeting.id}
-            title={meeting.summary_title ?? meeting.title ?? "Meeting"}
-            initialLines={transcripts ?? []}
-            initialSpeakerNames={
-              (meeting.speaker_names ?? {}) as Record<string, string>
-            }
-            initialSummaryStatus={meeting.summary_status ?? null}
-            mode={meeting.mode ?? "standard"}
-          />
-          {meeting.prd && <PrdSection prd={meeting.prd as PrdArtifact} />}
-          {meeting.summary && (
-            <SummarySection
-              meetingId={meeting.id}
-              initialTitle={meeting.summary_title ?? null}
-              initialSummary={meeting.summary}
-              initialExtras={meeting.summary_extras ?? {}}
-              initialCreatedTickets={createdTickets ?? []}
-              integrations={ticketProviders}
-            />
-          )}
-        </section>
-
-        <section className="min-h-0 overflow-y-auto border-b border-mist lg:border-b-0 lg:border-r p-[22px]">
-          <Eyebrow className="mb-[14px]">Notes</Eyebrow>
-          <Notes meetingId={meeting.id} initialNotes={notes ?? []} />
-        </section>
-
-        <section className="min-h-0 overflow-hidden p-[22px] flex flex-col">
-          <Eyebrow className="mb-[14px]">Chat</Eyebrow>
-          <ChatPanel
-            meetingId={meeting.id}
-            chips={(contexts ?? []) as ChipData[]}
-            integrations={integrationProviders}
-            githubConnected={integrationProviders.includes("github")}
-            presetSources={presetSources}
-            presetName={presetName}
-            tags={meetingTags}
-            initialPinnedImages={
-              (meeting.pinned_summary_images ?? []) as {
-                url: string;
-                alt: string | null;
-                label: string | null;
-              }[]
-            }
-          />
-        </section>
-      </div>
+      <MeetingWorkspace
+        meetingId={meeting.id}
+        title={meeting.summary_title ?? meeting.title ?? "Meeting"}
+        mode={meeting.mode ?? "standard"}
+        initialSummaryStatus={meeting.summary_status ?? null}
+        initialLines={transcripts ?? []}
+        initialSpeakerNames={
+          (meeting.speaker_names ?? {}) as Record<string, string>
+        }
+        initialNotes={notes ?? []}
+        chips={(contexts ?? []) as ChipData[]}
+        integrations={integrationProviders}
+        githubConnected={integrationProviders.includes("github")}
+        presetSources={presetSources}
+        presetName={presetName}
+        tags={meetingTags}
+        initialPinnedImages={
+          (meeting.pinned_summary_images ?? []) as {
+            url: string;
+            alt: string | null;
+            label: string | null;
+          }[]
+        }
+        summarySlot={
+          meeting.prd || meeting.summary ? (
+            <>
+              {meeting.prd && <PrdSection prd={meeting.prd as PrdArtifact} />}
+              {meeting.summary && (
+                <SummarySection
+                  meetingId={meeting.id}
+                  initialTitle={meeting.summary_title ?? null}
+                  initialSummary={meeting.summary}
+                  initialExtras={meeting.summary_extras ?? {}}
+                  initialCreatedTickets={createdTickets ?? []}
+                  integrations={ticketProviders}
+                />
+              )}
+            </>
+          ) : null
+        }
+      />
     </div>
   );
 }

@@ -4,6 +4,7 @@ import * as React from "react";
 import { createPortal } from "react-dom";
 
 type Align = "start" | "end";
+type Side = "bottom" | "top";
 
 type Props = {
   /** The clickable element that toggles the popover (e.g. an icon Button). */
@@ -13,6 +14,9 @@ type Props = {
   children: React.ReactNode | ((close: () => void) => React.ReactNode);
   /** Anchor the panel to the trigger's left ("start") or right ("end") edge. */
   align?: Align;
+  /** Open below ("bottom", default) or above ("top") the trigger — use "top"
+   *  for triggers in bottom-anchored bars. */
+  side?: Side;
   /** Fixed panel width in px. Required for `align="end"` to line up the edge. */
   width?: number;
   /** Extra classes for the floating panel. */
@@ -23,11 +27,16 @@ export function Popover({
   trigger,
   children,
   align = "start",
+  side = "bottom",
   width,
   className = "",
 }: Props) {
   const [open, setOpen] = React.useState(false);
-  const [pos, setPos] = React.useState<{ top: number; left: number } | null>(null);
+  const [pos, setPos] = React.useState<{
+    top?: number;
+    bottom?: number;
+    left: number;
+  } | null>(null);
   const anchorRef = React.useRef<HTMLSpanElement | null>(null);
   const panelRef = React.useRef<HTMLDivElement | null>(null);
 
@@ -61,7 +70,13 @@ export function Popover({
       const w = width ?? 220;
       let left = align === "end" ? r.right - w : r.left;
       left = Math.max(8, Math.min(left, window.innerWidth - w - 8));
-      setPos({ top: r.bottom + 6, left });
+      // "top" anchors the panel's bottom edge above the trigger so it can grow
+      // upward without needing its own height measured.
+      setPos(
+        side === "top"
+          ? { bottom: window.innerHeight - r.top + 6, left }
+          : { top: r.bottom + 6, left }
+      );
     }
     place();
     window.addEventListener("scroll", place, true);
@@ -70,7 +85,7 @@ export function Popover({
       window.removeEventListener("scroll", place, true);
       window.removeEventListener("resize", place);
     };
-  }, [open, align, width]);
+  }, [open, align, side, width]);
 
   return (
     <span
@@ -96,6 +111,7 @@ export function Popover({
             ].join(" ")}
             style={{
               top: pos.top,
+              bottom: pos.bottom,
               left: pos.left,
               width,
               boxShadow: "var(--shadow-3)",

@@ -1,129 +1,107 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { GripVertical } from "lucide-react";
 import TrashIcon from "@/components/icons/TrashIcon";
 import type { AnimatedIconHandle } from "@/components/icons/types";
-import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 
-type Note = {
+export type Note = {
   id: string;
   content: string;
   is_checked: boolean;
   created_at: string;
 };
 
-export function Notes({
-  meetingId,
-  initialNotes,
+// Granola-style inline note capture, rendered at the tail of the stream where
+// the saved note will land. Enter saves and stays open for rapid capture,
+// Escape (or blurring while empty) closes.
+export function NoteComposer({
+  onAdd,
+  onClose,
 }: {
-  meetingId: string;
-  initialNotes: Note[];
+  onAdd: (content: string) => Promise<void>;
+  onClose: () => void;
 }) {
-  const [notes, setNotes] = useState<Note[]>(initialNotes);
   const [draft, setDraft] = useState("");
+  const wrapRef = useRef<HTMLDivElement | null>(null);
 
-  async function addNote() {
+  useEffect(() => {
+    wrapRef.current?.scrollIntoView({ block: "nearest" });
+  }, []);
+
+  async function submit() {
     const content = draft.trim();
     if (!content) return;
     setDraft("");
-    const res = await fetch("/api/notes", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content, meeting_id: meetingId }),
-    });
-    if (!res.ok) return;
-    const created = (await res.json()) as Note;
-    setNotes((prev) => [...prev, created]);
-  }
-
-  async function toggleCheck(n: Note) {
-    setNotes((prev) =>
-      prev.map((x) => (x.id === n.id ? { ...x, is_checked: !x.is_checked } : x))
-    );
-    await fetch(`/api/notes/${n.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ is_checked: !n.is_checked }),
-    });
-  }
-
-  async function editNote(n: Note, content: string) {
-    setNotes((prev) =>
-      prev.map((x) => (x.id === n.id ? { ...x, content } : x))
-    );
-    await fetch(`/api/notes/${n.id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
-    });
-  }
-
-  async function deleteNote(n: Note) {
-    setNotes((prev) => prev.filter((x) => x.id !== n.id));
-    await fetch(`/api/notes/${n.id}`, { method: "DELETE" });
+    await onAdd(content);
+    // The new row lands above the composer — keep the composer in view.
+    wrapRef.current?.scrollIntoView({ block: "nearest" });
   }
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex gap-2 items-end">
-        <div className="flex-1">
-          <Input
-            value={draft}
-            onChange={(e) => setDraft(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                addNote();
-              }
-            }}
-            placeholder="Add a note…"
-          />
-        </div>
-        <Button variant="ink" onClick={addNote}>
-          Add
-        </Button>
-      </div>
-
-      {notes.length === 0 ? (
-        <div className="rounded-[10px] border border-dashed border-mist-2 bg-bone-2 p-[22px] text-center text-[13px] text-slate">
-          No notes yet.
-        </div>
-      ) : (
-        <ul className="list-none p-0 m-0 flex flex-col gap-[6px]">
-          {notes.map((n) => (
-            <NoteRow
-              key={n.id}
-              note={n}
-              onToggle={() => toggleCheck(n)}
-              onEdit={(content) => editNote(n, content)}
-              onDelete={() => deleteNote(n)}
-            />
-          ))}
-        </ul>
-      )}
+    <div ref={wrapRef}>
+      <Input
+        autoFocus
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            submit();
+          }
+          if (e.key === "Escape") {
+            setDraft("");
+            onClose();
+          }
+        }}
+        onBlur={() => {
+          if (!draft.trim()) onClose();
+        }}
+        placeholder="Add a note… (Enter to save, Esc to close)"
+      />
     </div>
   );
 }
 
-function NoteRow({
+export function NoteRow({
   note,
   onToggle,
   onEdit,
   onDelete,
+  dragging = false,
+  onDragStart,
+  onDragEnd,
 }: {
   note: Note;
   onToggle: () => void;
   onEdit: (content: string) => void;
   onDelete: () => void;
+  /** True while this row is the one being dragged — dims it in place. */
+  dragging?: boolean;
+  onDragStart?: () => void;
+  onDragEnd?: () => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(note.content);
   const [hover, setHover] = useState(false);
+  // The row is only draggable while the pointer is on the grip, so text
+  // selection and click-to-edit on the content keep working.
+  const [canDrag, setCanDrag] = useState(false);
   const iconRef = useRef<AnimatedIconHandle | null>(null);
 
   return (
     <li
+      draggable={canDrag}
+      onDragStart={(e) => {
+        e.dataTransfer.setData("text/plain", note.id);
+        e.dataTransfer.effectAllowed = "move";
+        onDragStart?.();
+      }}
+      onDragEnd={() => {
+        setCanDrag(false);
+        onDragEnd?.();
+      }}
       onMouseEnter={() => {
         setHover(true);
         iconRef.current?.startAnimation();
@@ -136,8 +114,21 @@ function NoteRow({
         "flex items-center gap-[10px] px-3 py-[9px]",
         "bg-bone-2 border border-mist rounded-[6px]",
         note.is_checked ? "opacity-[0.72]" : "",
+        dragging ? "opacity-40" : "",
       ].join(" ")}
     >
+      <span
+        onMouseEnter={() => setCanDrag(true)}
+        onMouseLeave={() => setCanDrag(false)}
+        title="Drag to reorder"
+        aria-hidden
+        className={[
+          "-ml-[6px] grid w-[14px] flex-shrink-0 cursor-grab place-content-center text-slate-3 transition-opacity active:cursor-grabbing",
+          hover ? "opacity-100" : "opacity-0",
+        ].join(" ")}
+      >
+        <GripVertical size={13} strokeWidth={1.6} />
+      </span>
       <span
         onClick={onToggle}
         className={[
@@ -150,12 +141,10 @@ function NoteRow({
       >
         {note.is_checked && (
           <span
-            className="block"
+            className="block border-l-[1.5px] border-b-[1.5px] border-on-accent"
             style={{
               width: 7,
               height: 4,
-              borderLeft: "1.5px solid #fff",
-              borderBottom: "1.5px solid #fff",
               transform: "rotate(-45deg) translate(1px,-1px)",
             }}
           />
