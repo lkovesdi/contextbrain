@@ -7,7 +7,6 @@ import { MeetingTitle } from "./MeetingTitle";
 import { SpacePicker } from "./SpacePicker";
 import { InviteButton } from "./InviteButton";
 import { SummarySection } from "./SummarySection";
-import { SummaryPreview } from "./SummaryPreview";
 import { PrdSection } from "./PrdSection";
 import type { PrdArtifact } from "@/lib/prd";
 import type { ChipData } from "@/components/context/ContextChip";
@@ -17,13 +16,10 @@ export const dynamic = "force-dynamic";
 
 export default async function MeetingPage({
   params,
-  searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ continue?: string }>;
 }) {
   const { id } = await params;
-  const { continue: continueFlag } = await searchParams;
   const supabase = await createClient();
   const {
     data: { user },
@@ -36,68 +32,6 @@ export default async function MeetingPage({
     .eq("id", id)
     .single();
   if (!meeting) notFound();
-
-  // Preview mode: an ended meeting with a summary opens into the read-only
-  // summary view. The "Continue meeting" button adds ?continue=1 to escape
-  // back into the full workspace.
-  const wantsContinue = continueFlag === "1";
-  const showPreview = !!meeting.summary && !!meeting.ended_at && !wantsContinue;
-
-  if (showPreview) {
-    const [
-      { data: notesForCount },
-      presetRow,
-      { data: ticketsForPreview },
-      { data: previewIntegrations },
-      { data: previewTagRows },
-    ] = await Promise.all([
-      supabase
-        .from("notes")
-        .select("id", { count: "exact", head: false })
-        .eq("meeting_id", id),
-      meeting.context_preset_id
-        ? supabase
-            .from("context_presets")
-            .select("name")
-            .eq("id", meeting.context_preset_id)
-            .single()
-        : Promise.resolve({ data: null as { name: string } | null }),
-      supabase
-        .from("meeting_tickets")
-        .select("id,provider,external_key,external_url,title,suggestion_title")
-        .eq("meeting_id", id)
-        .order("created_at", { ascending: false }),
-      supabase.from("integrations").select("provider"),
-      supabase
-        .from("meeting_tags")
-        .select("tag:tags(id,label_key,value)")
-        .eq("meeting_id", id)
-        .order("created_at", { ascending: true }),
-    ]);
-    const previewTags = ((previewTagRows ?? []) as unknown as { tag: Tag | null }[])
-      .map((r) => r.tag)
-      .filter((t): t is Tag => !!t);
-    const ticketProviders = ((previewIntegrations ?? []) as { provider: string }[])
-      .map((i) => i.provider)
-      .filter((p): p is "jira" | "linear" => p === "jira" || p === "linear");
-    return (
-      <SummaryPreview
-        meetingId={meeting.id}
-        title={meeting.title}
-        summaryTitle={meeting.summary_title ?? null}
-        summary={meeting.summary}
-        startedAt={meeting.started_at ?? null}
-        endedAt={meeting.ended_at ?? null}
-        noteCount={(notesForCount ?? []).length}
-        presetName={presetRow?.data?.name ?? null}
-        summaryExtras={meeting.summary_extras ?? {}}
-        createdTickets={ticketsForPreview ?? []}
-        ticketProviders={ticketProviders}
-        tags={previewTags}
-        prd={(meeting.prd ?? null) as PrdArtifact | null}
-      />
-    );
-  }
 
   const [
     { data: transcripts },

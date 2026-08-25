@@ -117,7 +117,7 @@ export function MeetingWorkspace({
   tags?: Tag[];
   initialPinnedImages?: PinnedImage[];
   // Server-rendered summary/PRD sections, shown at the top of the stream when
-  // the meeting already has them (the ?continue=1 workspace).
+  // the meeting already has them.
   summarySlot?: React.ReactNode;
 }) {
   const { session, error: micError, levelRef, start, stop } = useRecording();
@@ -698,7 +698,7 @@ export function MeetingWorkspace({
             <p className="m-0 flex flex-shrink-0 items-center gap-2 rounded-full border border-mist bg-bone-2 px-3 py-[7px] text-[12px] text-slate-2">
               <span className="h-[6px] w-[6px] rounded-full bg-pulse [animation:mb-pulse_1.4s_infinite]" />
               <Link
-                href={`/meetings/${session!.meetingId}?continue=1`}
+                href={`/meetings/${session!.meetingId}`}
                 className="cursor-pointer text-cortex-ink underline underline-offset-2"
               >
                 Recording another meeting
