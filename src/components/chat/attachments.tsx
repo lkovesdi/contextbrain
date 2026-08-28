@@ -457,7 +457,7 @@ export function AttachmentTray({
               Recording <Elapsed since={recording.startedAt} />
               <span className="normal-case tracking-normal text-slate-2">
                 {recording.source === "desktop"
-                  ? "— pick an area, then press ■ here or in the menu bar"
+                  ? "— drag an area to start; stop with ■ in the menu bar (or here). Esc cancels."
                   : "— press ■ when done"}
               </span>
             </span>

@@ -469,10 +469,13 @@ async fn capture_screenshot(app: tauri::AppHandle) -> Result<Option<String>, Str
 #[derive(Default)]
 struct ScreenRecording(std::sync::Mutex<Option<u32>>);
 
-/// Screen recording for the chat composer. Runs `screencapture -v -i -J video`
-/// — the region picker in video mode; recording runs until the user stops it
-/// (our Stop button → SIGINT, or the ■ macOS puts in the menu bar) or the
-/// -V cap. `-g` records the default mic so narration can be transcribed.
+/// Screen recording for the chat composer. Runs `screencapture -Jvideo` —
+/// the region picker in video mode. NOT `-i`: screencapture rejects video
+/// with -i ("video not valid with -i") and exits before any UI shows, which
+/// looked like an instant cancel (v0.2.13). Recording runs until the user
+/// stops it (the ■ macOS puts in the menu bar, or our Stop → SIGINT) or the
+/// -V cap; SIGINT is ignored while the picker is still up, where Escape
+/// cancels. `-g` records the default mic so narration can be transcribed.
 /// Returns the finished .mov as raw bytes (empty = cancelled in the picker);
 /// frames and audio are extracted in the webview, so no ffmpeg/AVFoundation
 /// here. Same Screen Recording permission story as `capture_screenshot`.
@@ -491,7 +494,7 @@ async fn capture_screen_recording(
             .unwrap_or(0);
         let file = dir.join(format!("recording-{stamp}.mov"));
         let mut child = std::process::Command::new("/usr/sbin/screencapture")
-            .args(["-v", "-i", "-J", "video", "-x", "-g", "-V", "60"])
+            .args(["-Jvideo", "-x", "-g", "-V", "60"])
             .arg(&file)
             .spawn()
             .map_err(|e| e.to_string())?;
@@ -505,10 +508,18 @@ async fn capture_screen_recording(
         if let Ok(mut slot) = state.0.lock() {
             *slot = None;
         }
-        // Escape in the picker: exit 1, no file. Stopped normally (SIGINT or
-        // the menu bar ■): exit 0 with a finalized movie.
+        // Escape in the picker: exit 1, no file. Stopped normally (the menu
+        // bar ■ or SIGINT): exit 0 with a finalized movie. Give the file a
+        // moment to land after a clean exit before calling it a cancel.
+        if status.success() {
+            for _ in 0..30 {
+                if file.exists() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+        }
         if !file.exists() {
-            let _ = status;
             return Ok(tauri::ipc::Response::new(Vec::<u8>::new()));
         }
         let bytes = std::fs::read(&file).map_err(|e| e.to_string())?;
