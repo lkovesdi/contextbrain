@@ -1,4 +1,3 @@
-## What's new in v0.2.13
+## What's new in v0.2.14
 
-- Screen recordings in chat. The new video button next to the camera records a region of your screen (up to 60 seconds) with your voice — narrate what you're showing. The recording is boiled down to the frames where the screen changed plus a transcript of what you said, and the assistant reads it as one clip.
-- Stop a recording with the ■ in ContextBrain or the one macOS puts in the menu bar.
+- Fixes screen recording ending the moment it started (v0.2.13). The region picker now actually appears: drag an area to start recording, stop with the ■ in the menu bar (or in ContextBrain), Esc to cancel.
