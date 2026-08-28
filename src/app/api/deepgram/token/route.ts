@@ -1,6 +1,6 @@
 import { createClient as createDg } from "@deepgram/sdk";
 import { createClient } from "@/lib/supabase/server";
-import { getAuthUser } from "@/lib/supabase/auth";
+import { getAuthUserVerified } from "@/lib/supabase/auth";
 import { resolveKey } from "@/lib/settings";
 import {
   assertCredits,
@@ -12,7 +12,7 @@ import { NextResponse } from "next/server";
 
 export async function GET() {
   const supabase = await createClient();
-  const user = await getAuthUser(supabase);
+  const user = await getAuthUserVerified(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   // Per-user key when set, else the platform Deepgram key (resolveKey handles

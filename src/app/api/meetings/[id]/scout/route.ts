@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { getAuthUserVerified } from "@/lib/supabase/auth";
 import { listResearch, liveScoutStep } from "@/lib/scout";
 import { assertCredits, creditErrorResponse } from "@/lib/credits";
 import { resolveKey } from "@/lib/settings";
@@ -18,9 +19,7 @@ export async function GET(
 ) {
   const { id: meetingId } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUserVerified(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { data: meeting } = await supabase
@@ -41,9 +40,7 @@ export async function POST(
 ) {
   const { id: meetingId } = await params;
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const user = await getAuthUserVerified(supabase);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { data: meeting } = await supabase

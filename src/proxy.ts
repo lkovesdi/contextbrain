@@ -24,7 +24,19 @@ export async function proxy(request: NextRequest) {
   // Keeps the session fresh (getClaims -> getSession refreshes an expired
   // token and re-writes cookies) but verifies the JWT locally instead of
   // calling the Auth server on every request like getUser() did.
-  await supabase.auth.getClaims();
+  try {
+    await supabase.auth.getClaims();
+  } catch {
+    // A corrupt auth cookie must not 500 every request — drop the Supabase
+    // auth cookies so the browser self-heals to signed-out.
+    const cleared = NextResponse.next({ request });
+    for (const c of request.cookies.getAll()) {
+      if (c.name.startsWith("sb-") && c.name.includes("-auth-token")) {
+        cleared.cookies.delete(c.name);
+      }
+    }
+    return cleared;
+  }
   return response;
 }
 

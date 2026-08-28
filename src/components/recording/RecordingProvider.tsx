@@ -311,7 +311,7 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
         // If the socket never opens and no Error/Close ever fires (network
         // black hole), un-stick the Record button.
         const openTimeout = setTimeout(() => {
-          if (!startingRef.current) return;
+          if (!startingRef.current || connRef.current !== conn) return;
           startingRef.current = false;
           setStarting(false);
           setError("Timed out starting transcription — try again.");
@@ -353,6 +353,14 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
             setSession(null);
             postWidgetState(null);
             tauriInvoke("widget_hide");
+            return;
+          }
+          // Ownership may have changed while the mic prompt was up (stop()
+          // from the widget, or a newer start()) — abandon quietly, and stop
+          // the tracks so the OS mic indicator doesn't stay lit.
+          if (connRef.current !== conn) {
+            stream.getTracks().forEach((t) => t.stop());
+            conn.finish();
             return;
           }
           streamRef.current = stream;
@@ -476,6 +484,10 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
 
         conn.on(LiveTranscriptionEvents.Close, () => {
           clearTimeout(openTimeout);
+          // A superseded socket (stopped, timed out, or replaced by a newer
+          // start()) closing late must not touch the live session's state or
+          // usage stamp — its own teardown path already settled both.
+          if (connRef.current !== conn) return;
           startingRef.current = false;
           setStarting(false);
           // Server hangup, network drop, or our own finish() — transcription
@@ -486,6 +498,10 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
 
         conn.on(LiveTranscriptionEvents.Error, (e: unknown) => {
           clearTimeout(openTimeout);
+          // Same superseded-socket guard as Close: a late error from an
+          // abandoned connection must not settle the live session's meter or
+          // paint a stale error over a healthy recording.
+          if (connRef.current !== conn) return;
           // The socket may have failed before ever opening — un-stick any
           // pending Record button.
           startingRef.current = false;
