@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import {
   ATTACHMENTS_BUCKET,
-  attachmentsFromStored,
+  storedAttachmentPaths,
 } from "@/lib/chat-attachments";
 
 // Clear a space's chat thread. RLS restricts the delete to the caller's own
@@ -23,9 +23,7 @@ export async function DELETE(
     .eq("space_id", id)
     .not("attachments", "eq", "[]");
   const paths = (rows ?? []).flatMap((r) =>
-    attachmentsFromStored((r as { attachments?: unknown }).attachments).map(
-      (a) => a.path!
-    )
+    storedAttachmentPaths((r as { attachments?: unknown }).attachments)
   );
 
   const { error } = await supabase

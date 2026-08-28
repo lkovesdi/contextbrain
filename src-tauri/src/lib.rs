@@ -7,6 +7,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .manage(PendingUpdate::default())
+        .manage(ScreenRecording::default())
         .setup(|app| {
             // First-launch hook. Phase 2 will register the Swift audio sidecar.
             //
@@ -130,7 +131,9 @@ pub fn run() {
             widget_stop,
             widget_ready,
             focus_main,
-            capture_screenshot
+            capture_screenshot,
+            capture_screen_recording,
+            stop_screen_recording
         ]);
 
     let app = builder
@@ -459,6 +462,82 @@ async fn capture_screenshot(app: tauri::AppHandle) -> Result<Option<String>, Str
         let _ = app;
         Err("Screenshot capture is only available on macOS for now.".to_string())
     }
+}
+
+/// The `screencapture` process behind an in-progress screen recording, so
+/// the in-app Stop button can end it.
+#[derive(Default)]
+struct ScreenRecording(std::sync::Mutex<Option<u32>>);
+
+/// Screen recording for the chat composer. Runs `screencapture -v -i -J video`
+/// — the region picker in video mode; recording runs until the user stops it
+/// (our Stop button → SIGINT, or the ■ macOS puts in the menu bar) or the
+/// -V cap. `-g` records the default mic so narration can be transcribed.
+/// Returns the finished .mov as raw bytes (empty = cancelled in the picker);
+/// frames and audio are extracted in the webview, so no ffmpeg/AVFoundation
+/// here. Same Screen Recording permission story as `capture_screenshot`.
+#[tauri::command]
+async fn capture_screen_recording(
+    app: tauri::AppHandle,
+    state: tauri::State<'_, ScreenRecording>,
+) -> Result<tauri::ipc::Response, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let file = dir.join(format!("recording-{stamp}.mov"));
+        let mut child = std::process::Command::new("/usr/sbin/screencapture")
+            .args(["-v", "-i", "-J", "video", "-x", "-g", "-V", "60"])
+            .arg(&file)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        if let Ok(mut slot) = state.0.lock() {
+            *slot = Some(child.id());
+        }
+        let status = tauri::async_runtime::spawn_blocking(move || child.wait())
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+        if let Ok(mut slot) = state.0.lock() {
+            *slot = None;
+        }
+        // Escape in the picker: exit 1, no file. Stopped normally (SIGINT or
+        // the menu bar ■): exit 0 with a finalized movie.
+        if !file.exists() {
+            let _ = status;
+            return Ok(tauri::ipc::Response::new(Vec::<u8>::new()));
+        }
+        let bytes = std::fs::read(&file).map_err(|e| e.to_string())?;
+        let _ = std::fs::remove_file(&file);
+        Ok(tauri::ipc::Response::new(bytes))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = (app, state);
+        Err("Screen recording is only available on macOS for now.".to_string())
+    }
+}
+
+/// End an in-progress screen recording. SIGINT is how `screencapture`
+/// finalizes the movie from the command line (Ctrl-C), so the pending
+/// `capture_screen_recording` call then resolves with the file.
+#[tauri::command]
+fn stop_screen_recording(state: tauri::State<'_, ScreenRecording>) {
+    #[cfg(target_os = "macos")]
+    if let Ok(slot) = state.0.lock() {
+        if let Some(pid) = *slot {
+            // SAFETY: plain signal send to a pid we spawned and still track.
+            unsafe {
+                libc::kill(pid as libc::pid_t, libc::SIGINT);
+            }
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = state;
 }
 
 /// Stop the active recording (called by the widget's stop button). The main

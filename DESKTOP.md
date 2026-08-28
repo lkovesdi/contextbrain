@@ -150,6 +150,12 @@ The first capture makes macOS prompt for **Screen Recording** permission for Con
 
 In the browser (and in desktop builds predating the command), the same button falls back to `getDisplayMedia()` (Chrome/Edge/Safari share picker → one frame), and pasting/dropping an image into the composer always works.
 
+### Screen recordings
+
+The video button calls `capture_screen_recording`, which runs `screencapture -v -i -J video -x -g -V 60 <file>.mov` — the ⌘⇧5-style region picker in video mode, mic audio included (`-g`) so narration can be transcribed, capped at 60 s. Recording ends via the in-app ■ (`stop_screen_recording` sends the child SIGINT — the same thing Ctrl-C does in Terminal, and `screencapture` finalizes the movie on it) or macOS's own ■ in the menu bar. The finished `.mov` returns over IPC as raw bytes (`tauri::ipc::Response`), never touching disk beyond the app cache.
+
+No model takes video, so the webview reduces it (`src/lib/video-frames.ts`): frames are sampled once a second, kept only where the picture changed (≤12), downscaled, and the audio is decoded to 16 kHz WAV and sent to `/api/chat/transcribe` (Deepgram pre-recorded). What the model gets is "N timestamped frames + what you said". The browser path is the same pipeline on a `getDisplayMedia` + `MediaRecorder` webm.
+
 ## Icons
 
 Drop a 1024×1024 PNG anywhere (a `design/` folder works), then:

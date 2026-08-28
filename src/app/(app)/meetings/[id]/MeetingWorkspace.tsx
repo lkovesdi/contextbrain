@@ -958,6 +958,7 @@ export function MeetingWorkspace({
           onRemove={att.remove}
           busy={att.busy}
           error={att.error}
+          recording={att.recording}
           className="mx-auto w-full max-w-[820px]"
         />
         <div className="mx-auto flex w-full max-w-[820px] items-center gap-[10px]">
@@ -1021,6 +1022,9 @@ export function MeetingWorkspace({
           />
           <AttachControls
             onCapture={att.capture}
+            onRecord={att.startRecording}
+            onStopRecording={att.stopRecording}
+            recording={att.recording}
             onFiles={(files) => void att.addBlobs(files)}
             busy={att.busy}
             disabled={streaming}

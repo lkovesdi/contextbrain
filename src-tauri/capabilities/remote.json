@@ -16,6 +16,8 @@
     "allow-widget-stop",
     "allow-widget-ready",
     "allow-focus-main",
-    "allow-capture-screenshot"
+    "allow-capture-screenshot",
+    "allow-capture-screen-recording",
+    "allow-stop-screen-recording"
   ]
 }

@@ -283,6 +283,7 @@ export function SpaceChatPanel({
           onRemove={att.remove}
           busy={att.busy}
           error={att.error}
+          recording={att.recording}
         />
         <div className="flex items-stretch gap-2">
           <textarea
@@ -303,6 +304,9 @@ export function SpaceChatPanel({
           <div className="flex items-center gap-[6px]">
             <AttachControls
               onCapture={att.capture}
+              onRecord={att.startRecording}
+              onStopRecording={att.stopRecording}
+              recording={att.recording}
               onFiles={(files) => void att.addBlobs(files)}
               busy={att.busy}
               disabled={streaming}

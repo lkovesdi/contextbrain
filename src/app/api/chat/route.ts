@@ -15,7 +15,10 @@ import {
   ATTACHMENT_MEDIA_TYPES,
   ATTACHMENT_PATH_RE,
   MAX_ATTACHMENTS,
+  MAX_VIDEO_FRAMES,
   extensionFor,
+  formatTimestamp,
+  type AttachmentMediaType,
   type StoredAttachment,
 } from "@/lib/chat-attachments";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -27,13 +30,14 @@ export const maxDuration = 60;
 // Base64 of a ≤1568px PNG/JPEG lands well under this; the cap just stops a
 // hostile client from posting a 100 MB "image".
 const MAX_ATTACHMENT_B64 = 6_000_000;
-// Images older turns can contribute to one model call. The client re-sends
-// the whole thread every turn, so this bounds cost on screenshot-heavy chats.
-const MAX_IMAGES_IN_CONTEXT = 12;
+// Images (screenshots + recording frames) one model call may carry. The
+// client re-sends the whole thread every turn, so this bounds cost on
+// screenshot-heavy chats; the newest images win.
+const MAX_IMAGES_IN_CONTEXT = 24;
 // Anthropic's rule of thumb is (w×h)/750 tokens — a 1568×980 screenshot ≈ 2k.
 const APPROX_TOKENS_PER_IMAGE = 2000;
 
-const Attachment = z
+const ImageRef = z
   .object({
     media_type: z.enum(ATTACHMENT_MEDIA_TYPES),
     // Fresh this session: base64 payload.
@@ -44,6 +48,23 @@ const Attachment = z
   .refine((a) => !!(a.data || a.path), {
     message: "attachment needs data or path",
   });
+type ImageRef = z.infer<typeof ImageRef>;
+
+const ImageAttachment = ImageRef.and(
+  z.object({ kind: z.literal("image").optional() })
+);
+// A screen recording, pre-reduced by the client to timestamped frames + the
+// narration transcript (see src/lib/video-frames.ts).
+const VideoAttachment = z.object({
+  kind: z.literal("video"),
+  duration: z.number().min(0).max(3600),
+  transcript: z.string().max(20_000).nullable(),
+  frames: z
+    .array(ImageRef.and(z.object({ t: z.number().min(0).max(3600) })))
+    .min(1)
+    .max(MAX_VIDEO_FRAMES),
+});
+const Attachment = z.union([VideoAttachment, ImageAttachment]);
 type Attachment = z.infer<typeof Attachment>;
 
 const Message = z.object({
@@ -106,7 +127,9 @@ async function loadStoredImage(
 
 // Wire messages → model messages. User turns with images become multipart
 // content; the newest MAX_IMAGES_IN_CONTEXT images win, older ones collapse
-// to a one-line note so the model knows something was there.
+// to a one-line note so the model knows something was there. A recording
+// becomes a header (duration + narration) followed by its frames, each
+// introduced by its timestamp.
 async function toModelMessages(
   msgs: Message[],
   supabase: SupabaseClient,
@@ -115,6 +138,10 @@ async function toModelMessages(
   let budget = MAX_IMAGES_IN_CONTEXT;
   let imageCount = 0;
   const out: ModelMessage[] = [];
+
+  const resolveImage = async (ref: ImageRef): Promise<string | null> =>
+    ref.data ?? (ref.path ? loadStoredImage(supabase, userId, ref.path) : null);
+
   for (let i = msgs.length - 1; i >= 0; i--) {
     const m = msgs[i];
     const attachments = m.role === "user" ? (m.attachments ?? []) : [];
@@ -125,31 +152,77 @@ async function toModelMessages(
     const parts: Array<TextPart | ImagePart> = [];
     if (m.content.trim()) parts.push({ type: "text", text: m.content });
     let omitted = 0;
-    for (const a of attachments) {
+
+    // Push one image if the budget allows; count it as omitted otherwise.
+    const pushImage = async (
+      ref: ImageRef,
+      mediaType: AttachmentMediaType,
+      label?: string
+    ) => {
       if (budget <= 0) {
         omitted++;
-        continue;
+        return;
       }
-      const data =
-        a.data ?? (a.path ? await loadStoredImage(supabase, userId, a.path) : null);
+      const data = await resolveImage(ref);
       if (!data) {
         omitted++;
-        continue;
+        return;
       }
-      parts.push({ type: "image", image: data, mediaType: a.media_type });
+      if (label) parts.push({ type: "text", text: label });
+      parts.push({ type: "image", image: data, mediaType });
       budget--;
       imageCount++;
+    };
+
+    for (const a of attachments) {
+      if ("kind" in a && a.kind === "video") {
+        const narration = a.transcript?.trim()
+          ? ` The user narrated: "${a.transcript.trim()}"`
+          : " (no narration)";
+        parts.push({
+          type: "text",
+          text: `Screen recording, ${formatTimestamp(a.duration)} long, shown as ${a.frames.length} frames where the screen changed.${narration}`,
+        });
+        for (const f of a.frames) {
+          await pushImage(f, f.media_type, `[frame at ${formatTimestamp(f.t)}]`);
+        }
+      } else {
+        await pushImage(a, a.media_type);
+      }
     }
     if (omitted) {
       parts.push({
         type: "text",
-        text: `[${omitted} earlier screenshot${omitted > 1 ? "s" : ""} omitted]`,
+        text: `[${omitted} earlier image${omitted > 1 ? "s" : ""} omitted]`,
       });
     }
     out.push({ role: "user", content: parts });
   }
   out.reverse();
   return { messages: out, imageCount };
+}
+
+// Upload one fresh image (or pass a stored one through). Returns null when
+// the upload fails — the message still persists, just without that image.
+async function storeImage(
+  supabase: SupabaseClient,
+  userId: string,
+  ref: ImageRef
+): Promise<{ path: string; media_type: AttachmentMediaType } | null> {
+  if (ref.path) return { path: ref.path, media_type: ref.media_type };
+  if (!ref.data) return null;
+  const path = `${userId}/${randomUUID()}.${extensionFor(ref.media_type)}`;
+  const { error } = await supabase.storage
+    .from(ATTACHMENTS_BUCKET)
+    .upload(path, Buffer.from(ref.data, "base64"), {
+      contentType: ref.media_type,
+      upsert: false,
+    });
+  if (error) {
+    console.error("[chat] attachment upload failed:", error.message);
+    return null;
+  }
+  return { path, media_type: ref.media_type };
 }
 
 // Persist the user turn. New images go to the private bucket first so the
@@ -166,23 +239,27 @@ async function persistUserMessage(
 ): Promise<void> {
   const stored: StoredAttachment[] = [];
   for (const a of attachments) {
-    if (a.path) {
-      stored.push({ path: a.path, media_type: a.media_type });
-      continue;
+    if ("kind" in a && a.kind === "video") {
+      const frames = (
+        await Promise.all(
+          a.frames.map(async (f) => {
+            const s = await storeImage(supabase, userId, f);
+            return s ? { ...s, t: f.t } : null;
+          })
+        )
+      ).filter((f): f is NonNullable<typeof f> => f !== null);
+      if (frames.length) {
+        stored.push({
+          kind: "video",
+          duration: a.duration,
+          transcript: a.transcript,
+          frames,
+        });
+      }
+    } else {
+      const s = await storeImage(supabase, userId, a);
+      if (s) stored.push({ kind: "image", ...s });
     }
-    if (!a.data) continue;
-    const path = `${userId}/${randomUUID()}.${extensionFor(a.media_type)}`;
-    const { error } = await supabase.storage
-      .from(ATTACHMENTS_BUCKET)
-      .upload(path, Buffer.from(a.data, "base64"), {
-        contentType: a.media_type,
-        upsert: false,
-      });
-    if (error) {
-      console.error("[chat] attachment upload failed:", error.message);
-      continue;
-    }
-    stored.push({ path, media_type: a.media_type });
   }
 
   // Untyped client: a union-typed row trips supabase-js's excess-property
@@ -359,6 +436,8 @@ Two sources of knowledge, used differently:
 - **Your own knowledge** covers everything else: software concepts, frameworks, APIs, protocols, industry conventions, general world knowledge. Use it freely. Don't refuse or hedge just because retrieval came up thin — retrieval is for *their* data; your training is for everything else.
 
 The user may attach screenshots to a message (images in the conversation). Treat them as first-class context: read any text in them verbatim when relevant, describe UI, diagrams, code, and error messages precisely, and connect what you see to the retrieved context when it fits. A message that is only a screenshot with no text means "look at this" — say what matters in it.
+
+A screen recording arrives as a sequence of timestamped frames (sampled where the screen changed) plus a transcript of what the user said while recording. Treat it as one continuous clip: follow what changes from frame to frame, use the narration to understand intent, and refer to moments by timestamp when useful. Don't describe each frame in isolation.
 
 Never write meta-commentary like "based on the retrieved context," "the context doesn't cover this," or "from what's available." Just answer. If a question genuinely requires user-specific info you don't have and retrieval missed it, say so in one short sentence and move on — don't pad the answer with apologies.
 
