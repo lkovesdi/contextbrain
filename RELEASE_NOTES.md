@@ -1,4 +1,4 @@
-## What's new in v0.2.12
+## What's new in v0.2.13
 
-- Screenshots in chat. Hit the camera button next to the message box to grab any region or window on your screen (the same crosshair as ⌘⇧4) and ask about it — the assistant reads text, UI, diagrams and error messages in the image. You can also paste (⌘V), drag-drop, or pick an image file.
-- The first capture asks for **Screen Recording** permission; grant it in System Settings → Privacy & Security, then relaunch ContextBrain.
+- Screen recordings in chat. The new video button next to the camera records a region of your screen (up to 60 seconds) with your voice — narrate what you're showing. The recording is boiled down to the frames where the screen changed plus a transcript of what you said, and the assistant reads it as one clip.
+- Stop a recording with the ■ in ContextBrain or the one macOS puts in the menu bar.
