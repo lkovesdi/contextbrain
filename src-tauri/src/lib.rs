@@ -129,7 +129,8 @@ pub fn run() {
             widget_hide,
             widget_stop,
             widget_ready,
-            focus_main
+            focus_main,
+            capture_screenshot
         ]);
 
     let app = builder
@@ -404,6 +405,59 @@ fn focus_main(app: tauri::AppHandle) {
         let _ = main.show();
         let _ = main.set_focus();
         let _ = main.eval("window.__cbRecordingOpen && window.__cbRecordingOpen()");
+    }
+}
+
+/// Interactive screenshot for the chat composer. Runs macOS's own
+/// `screencapture -i` — the ⌘⇧4 crosshair: drag a region, or press Space for
+/// window mode, Escape to cancel — so the user can grab any app, not just
+/// ours. Blocks until the user finishes, off the main thread. Returns the PNG
+/// as base64, or None on cancel (screencapture exits 1 with no file).
+///
+/// Permissions: the first capture makes macOS prompt for "Screen Recording"
+/// for ContextBrain (the child inherits our TCC identity). Until it's granted
+/// and the app relaunched, the image comes back with other apps' windows
+/// blanked — that's the OS, not a bug here.
+#[tauri::command]
+async fn capture_screenshot(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use base64::Engine;
+        let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0);
+        let file = dir.join(format!("screenshot-{stamp}.png"));
+        let target = file.clone();
+        let status = tauri::async_runtime::spawn_blocking(move || {
+            std::process::Command::new("/usr/sbin/screencapture")
+                // -i interactive, -x no shutter sound (the composer shows the
+                // result immediately, the sound reads as a second capture).
+                .args(["-i", "-x", "-t", "png"])
+                .arg(&target)
+                .status()
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+
+        if !status.success() || !file.exists() {
+            let _ = std::fs::remove_file(&file);
+            return Ok(None);
+        }
+        let bytes = std::fs::read(&file).map_err(|e| e.to_string())?;
+        let _ = std::fs::remove_file(&file);
+        if bytes.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(base64::engine::general_purpose::STANDARD.encode(bytes)))
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = app;
+        Err("Screenshot capture is only available on macOS for now.".to_string())
     }
 }
 

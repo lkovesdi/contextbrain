@@ -16,6 +16,7 @@ fn main() {
             "widget_stop",
             "widget_ready",
             "focus_main",
+            "capture_screenshot",
         ])),
     )
     .expect("failed to run tauri-build");

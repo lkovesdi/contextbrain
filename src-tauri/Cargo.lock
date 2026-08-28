@@ -521,8 +521,9 @@ dependencies = [
 
 [[package]]
 name = "contextbrain"
-version = "0.2.11"
+version = "0.2.12"
 dependencies = [
+ "base64 0.22.1",
  "objc2",
  "objc2-app-kit",
  "objc2-foundation",

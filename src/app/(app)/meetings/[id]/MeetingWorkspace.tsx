@@ -9,6 +9,14 @@ import {
   type Selection,
 } from "@/components/context/ContextSelector";
 import { AssistantMarkdown } from "@/components/chat/AssistantMarkdown";
+import {
+  AttachControls,
+  AttachmentTray,
+  MessageAttachments,
+  toRequestAttachments,
+  useChatAttachments,
+  type ChatAttachment,
+} from "@/components/chat/attachments";
 import type { Provider } from "@/lib/composio";
 import type { ResearchRow } from "@/lib/scout";
 import type { ChipData } from "@/components/context/ContextChip";
@@ -29,7 +37,11 @@ import { TranscriptTicker } from "./TranscriptTicker";
 import { NoteComposer, NoteRow, type Note } from "./Notes";
 import { MeetingTags } from "./MeetingTags";
 
-type Msg = { role: "user" | "assistant"; content: string };
+type Msg = {
+  role: "user" | "assistant";
+  content: string;
+  attachments?: ChatAttachment[];
+};
 
 type PresetSources = {
   external_context_ids?: string[];
@@ -536,6 +548,7 @@ export function MeetingWorkspace({
 
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
+  const att = useChatAttachments();
   const [streaming, setStreaming] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
@@ -584,10 +597,12 @@ export function MeetingWorkspace({
 
   async function send() {
     const content = input.trim();
-    if (!content || streaming) return;
+    const attachments = att.attachments;
+    if ((!content && attachments.length === 0) || streaming) return;
     setInput("");
+    att.clear();
     setChatError(null);
-    const next: Msg[] = [...messages, { role: "user", content }];
+    const next: Msg[] = [...messages, { role: "user", content, attachments }];
     setMessages(next);
     setStreaming(true);
     setMessages((m) => [...m, { role: "assistant", content: "" }]);
@@ -597,7 +612,11 @@ export function MeetingWorkspace({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: next,
+          messages: next.map((m) => ({
+            role: m.role,
+            content: m.content,
+            attachments: toRequestAttachments(m.attachments),
+          })),
           selection,
           meeting_id: meetingId,
         }),
@@ -927,8 +946,20 @@ export function MeetingWorkspace({
         </div>
       )}
 
-      {/* Composer bar: recorder pill · Ask anything · catch up · send */}
-      <div className="flex items-center gap-[10px] px-[22px] py-[12px]">
+      {/* Composer bar: recorder pill · Ask anything · screenshot · catch up · send.
+          Dropping an image anywhere on the bar attaches it. */}
+      <div
+        className="flex flex-col gap-[8px] px-[22px] py-[12px]"
+        onDrop={att.onDrop}
+        onDragOver={att.onDragOver}
+      >
+        <AttachmentTray
+          attachments={att.attachments}
+          onRemove={att.remove}
+          busy={att.busy}
+          error={att.error}
+          className="mx-auto w-full max-w-[820px]"
+        />
         <div className="mx-auto flex w-full max-w-[820px] items-center gap-[10px]">
           {recording ? (
             <div className="flex flex-shrink-0 items-center gap-[6px] rounded-full border border-mist bg-bone-2 py-[5px] pl-[14px] pr-[6px]">
@@ -983,9 +1014,17 @@ export function MeetingWorkspace({
                 send();
               }
             }}
+            onPaste={att.onPaste}
             rows={1}
             placeholder="Ask anything… (⌘K)"
             className="min-w-0 flex-1 resize-none rounded-[18px] border border-mist bg-bone-2 px-[16px] py-[9px] text-[13.5px] leading-[1.5] text-ink outline-none transition-colors focus:border-mist-2"
+          />
+          <AttachControls
+            onCapture={att.capture}
+            onFiles={(files) => void att.addBlobs(files)}
+            busy={att.busy}
+            disabled={streaming}
+            className="rounded-full"
           />
           <Button
             variant="secondary"
@@ -1002,7 +1041,7 @@ export function MeetingWorkspace({
           <Button
             variant="primary"
             onClick={send}
-            disabled={streaming || !input.trim()}
+            disabled={streaming || (!input.trim() && att.attachments.length === 0)}
             className="flex-shrink-0 rounded-full"
             onMouseEnter={() => sendIconRef.current?.startAnimation()}
             onMouseLeave={() => sendIconRef.current?.stopAnimation()}
@@ -1152,7 +1191,12 @@ function ChatMsg({
       </div>
       <div className="text-[14px] leading-[1.6] text-ink">
         {isUser ? (
-          <div className="whitespace-pre-wrap">{msg.content}</div>
+          <>
+            <MessageAttachments attachments={msg.attachments} />
+            {msg.content && (
+              <div className="whitespace-pre-wrap">{msg.content}</div>
+            )}
+          </>
         ) : (
           <AssistantMarkdown
             content={msg.content}

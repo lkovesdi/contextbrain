@@ -13,6 +13,7 @@
     "allow-dismiss-update-popup",
     "allow-restart-app",
     "allow-pending-update-version",
-    "allow-pending-update-notes"
+    "allow-pending-update-notes",
+    "allow-capture-screenshot"
   ]
 }

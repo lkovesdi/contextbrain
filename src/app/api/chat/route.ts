@@ -1,21 +1,60 @@
 import { anthropicModel } from "@/lib/llm";
 import { creditErrorResponse } from "@/lib/credits";
-import { streamText } from "ai";
+import {
+  streamText,
+  type ImagePart,
+  type ModelMessage,
+  type TextPart,
+} from "ai";
 import { retrieve, type RetrievedChunk, type ContextSelection } from "@/lib/retrieve";
 import { createClient } from "@/lib/supabase/server";
-import { getAuthUser } from "@/lib/supabase/auth";
+import { getAuthUserVerified } from "@/lib/supabase/auth";
 import type { Provider } from "@/lib/composio";
+import {
+  ATTACHMENTS_BUCKET,
+  ATTACHMENT_MEDIA_TYPES,
+  ATTACHMENT_PATH_RE,
+  MAX_ATTACHMENTS,
+  extensionFor,
+  type StoredAttachment,
+} from "@/lib/chat-attachments";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 export const maxDuration = 60;
 
+// Base64 of a ≤1568px PNG/JPEG lands well under this; the cap just stops a
+// hostile client from posting a 100 MB "image".
+const MAX_ATTACHMENT_B64 = 6_000_000;
+// Images older turns can contribute to one model call. The client re-sends
+// the whole thread every turn, so this bounds cost on screenshot-heavy chats.
+const MAX_IMAGES_IN_CONTEXT = 12;
+// Anthropic's rule of thumb is (w×h)/750 tokens — a 1568×980 screenshot ≈ 2k.
+const APPROX_TOKENS_PER_IMAGE = 2000;
+
+const Attachment = z
+  .object({
+    media_type: z.enum(ATTACHMENT_MEDIA_TYPES),
+    // Fresh this session: base64 payload.
+    data: z.string().max(MAX_ATTACHMENT_B64).optional(),
+    // Loaded from history: storage key under the caller's own folder.
+    path: z.string().regex(ATTACHMENT_PATH_RE).optional(),
+  })
+  .refine((a) => !!(a.data || a.path), {
+    message: "attachment needs data or path",
+  });
+type Attachment = z.infer<typeof Attachment>;
+
+const Message = z.object({
+  role: z.enum(["user", "assistant"]),
+  content: z.string(),
+  attachments: z.array(Attachment).max(MAX_ATTACHMENTS).optional(),
+});
+type Message = z.infer<typeof Message>;
+
 const Body = z.object({
-  messages: z.array(
-    z.object({
-      role: z.enum(["user", "assistant"]),
-      content: z.string(),
-    })
-  ),
+  messages: z.array(Message),
   selection: z
     .object({
       meeting_id: z.string().uuid().optional(),
@@ -49,6 +88,124 @@ const Body = z.object({
   space_id: z.string().uuid().optional(),
 });
 
+// A history attachment only has a storage key; pull the bytes back so the
+// model still sees screenshots from before a reload. The prefix check is a
+// fast reject — the bucket's RLS enforces the same ownership rule.
+async function loadStoredImage(
+  supabase: SupabaseClient,
+  userId: string,
+  path: string
+): Promise<string | null> {
+  if (!path.startsWith(`${userId}/`)) return null;
+  const { data, error } = await supabase.storage
+    .from(ATTACHMENTS_BUCKET)
+    .download(path);
+  if (error || !data) return null;
+  return Buffer.from(await data.arrayBuffer()).toString("base64");
+}
+
+// Wire messages → model messages. User turns with images become multipart
+// content; the newest MAX_IMAGES_IN_CONTEXT images win, older ones collapse
+// to a one-line note so the model knows something was there.
+async function toModelMessages(
+  msgs: Message[],
+  supabase: SupabaseClient,
+  userId: string
+): Promise<{ messages: ModelMessage[]; imageCount: number }> {
+  let budget = MAX_IMAGES_IN_CONTEXT;
+  let imageCount = 0;
+  const out: ModelMessage[] = [];
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    const attachments = m.role === "user" ? (m.attachments ?? []) : [];
+    if (!attachments.length) {
+      out.push({ role: m.role, content: m.content });
+      continue;
+    }
+    const parts: Array<TextPart | ImagePart> = [];
+    if (m.content.trim()) parts.push({ type: "text", text: m.content });
+    let omitted = 0;
+    for (const a of attachments) {
+      if (budget <= 0) {
+        omitted++;
+        continue;
+      }
+      const data =
+        a.data ?? (a.path ? await loadStoredImage(supabase, userId, a.path) : null);
+      if (!data) {
+        omitted++;
+        continue;
+      }
+      parts.push({ type: "image", image: data, mediaType: a.media_type });
+      budget--;
+      imageCount++;
+    }
+    if (omitted) {
+      parts.push({
+        type: "text",
+        text: `[${omitted} earlier screenshot${omitted > 1 ? "s" : ""} omitted]`,
+      });
+    }
+    out.push({ role: "user", content: parts });
+  }
+  out.reverse();
+  return { messages: out, imageCount };
+}
+
+// Persist the user turn. New images go to the private bucket first so the
+// row only ever references stored objects. If the insert with `attachments`
+// fails (migration 0022 not applied yet), fall back to the text alone —
+// losing a thumbnail on reload beats losing the message.
+async function persistUserMessage(
+  supabase: SupabaseClient,
+  userId: string,
+  persistKey: { meeting_id: string } | { space_id: string },
+  text: string,
+  attachments: Attachment[],
+  sources: { source: string; score: number }[]
+): Promise<void> {
+  const stored: StoredAttachment[] = [];
+  for (const a of attachments) {
+    if (a.path) {
+      stored.push({ path: a.path, media_type: a.media_type });
+      continue;
+    }
+    if (!a.data) continue;
+    const path = `${userId}/${randomUUID()}.${extensionFor(a.media_type)}`;
+    const { error } = await supabase.storage
+      .from(ATTACHMENTS_BUCKET)
+      .upload(path, Buffer.from(a.data, "base64"), {
+        contentType: a.media_type,
+        upsert: false,
+      });
+    if (error) {
+      console.error("[chat] attachment upload failed:", error.message);
+      continue;
+    }
+    stored.push({ path, media_type: a.media_type });
+  }
+
+  // Untyped client: a union-typed row trips supabase-js's excess-property
+  // check, so keep the literal loose.
+  const row: Record<string, unknown> = {
+    ...persistKey,
+    user_id: userId,
+    role: "user",
+    content: text,
+    sources,
+  };
+  const { error } = await supabase
+    .from("chat_messages")
+    .insert(stored.length ? { ...row, attachments: stored } : row);
+  if (error && stored.length) {
+    console.error(
+      "[chat] insert with attachments failed, retrying without:",
+      error.message
+    );
+    await supabase.from("chat_messages").insert(row);
+  }
+}
+
 export async function POST(req: Request) {
   const parsed = Body.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
@@ -57,18 +214,21 @@ export async function POST(req: Request) {
   const { messages, selection, meeting_id, space_id } = parsed.data;
 
   const supabase = await createClient();
-  const user = await getAuthUser(supabase);
+  const user = await getAuthUserVerified(supabase);
   if (!user) return new Response("Unauthorized", { status: 401 });
 
   // Drop any placeholder messages with empty content — the client seeds an
   // empty assistant turn before streaming starts; if a previous turn errored
   // or returned nothing, that empty block stays in conversation state and
   // Anthropic rejects the next request with "text content blocks must be
-  // non-empty".
-  const cleanMessages = messages.filter((m) => m.content.trim().length > 0);
+  // non-empty". A user turn that's only a screenshot (no text) is kept.
+  const cleanMessages = messages.filter(
+    (m) => m.content.trim().length > 0 || (m.attachments?.length ?? 0) > 0
+  );
 
-  const lastUserMsg =
-    [...cleanMessages].reverse().find((m) => m.role === "user")?.content ?? "";
+  const lastUser = [...cleanMessages].reverse().find((m) => m.role === "user");
+  const lastUserMsg = lastUser?.content ?? "";
+  const lastAttachments = lastUser?.attachments ?? [];
 
   // Resolve whose context to search. The meeting owner searches their own
   // (trusting their client selection). A guest of the meeting searches the
@@ -153,6 +313,7 @@ export async function POST(req: Request) {
         contextUserId: contextUserId ?? null,
         selMeetingId: effectiveSelection.meeting_id ?? null,
         chunks: chunks.length,
+        images: lastAttachments.length,
       })
   );
 
@@ -197,34 +358,49 @@ Two sources of knowledge, used differently:
 - **Retrieved context** below is authoritative for anything user-specific: their meetings, notes, decisions, people, projects, integrations. When you draw on it, cite with bracket numbers like [1], [2].
 - **Your own knowledge** covers everything else: software concepts, frameworks, APIs, protocols, industry conventions, general world knowledge. Use it freely. Don't refuse or hedge just because retrieval came up thin — retrieval is for *their* data; your training is for everything else.
 
+The user may attach screenshots to a message (images in the conversation). Treat them as first-class context: read any text in them verbatim when relevant, describe UI, diagrams, code, and error messages precisely, and connect what you see to the retrieved context when it fits. A message that is only a screenshot with no text means "look at this" — say what matters in it.
+
 Never write meta-commentary like "based on the retrieved context," "the context doesn't cover this," or "from what's available." Just answer. If a question genuinely requires user-specific info you don't have and retrieval missed it, say so in one short sentence and move on — don't pad the answer with apologies.
 
 When a retrieved chunk includes a \`screenshot_url:\`, show the image inline with markdown: \`![<short alt>](<url>)\`. Do this when the user asks to *see*, *show*, or *look at* something. Don't invent URLs — only use ones present in retrieved context.${contextBlock}`;
 
-  // Persist the user message + which sources we retrieved (don't block on it).
+  // Persist the user message + which sources we retrieved (don't block on it;
+  // onFinish awaits it so the assistant row always lands after the user's).
   // Meeting chats key on meeting_id, space chats on space_id.
   const persistKey = meeting_id
     ? { meeting_id }
     : space_id
       ? { space_id }
       : null;
-  if (persistKey && lastUserMsg.trim()) {
-    void supabase.from("chat_messages").insert({
-      ...persistKey,
-      user_id: user.id,
-      role: "user",
-      content: lastUserMsg,
-      sources: chunks.map((c) => ({ source: c.source, score: c.score })),
-    });
-  }
+  const sources = chunks.map((c) => ({ source: c.source, score: c.score }));
+  const persisted =
+    persistKey && (lastUserMsg.trim() || lastAttachments.length)
+      ? persistUserMessage(
+          supabase,
+          user.id,
+          persistKey,
+          lastUserMsg,
+          lastAttachments,
+          sources
+        ).catch((e) => console.error("[chat] persist failed:", e))
+      : Promise.resolve();
+
+  const { messages: modelMessages, imageCount } = await toModelMessages(
+    cleanMessages,
+    supabase,
+    user.id
+  );
 
   // Opus for sharp reasoning on short turns; Sonnet once context is heavy
-  // enough that the 5x cost premium stops paying for itself. ~4 chars/token.
-  const approxTokens = Math.ceil(
-    (system.length +
-      cleanMessages.reduce((sum, m) => sum + m.content.length, 0)) /
-      4
-  );
+  // enough that the 5x cost premium stops paying for itself. ~4 chars/token,
+  // plus a flat estimate per image.
+  const approxTokens =
+    Math.ceil(
+      (system.length +
+        cleanMessages.reduce((sum, m) => sum + m.content.length, 0)) /
+        4
+    ) +
+    imageCount * APPROX_TOKENS_PER_IMAGE;
   const modelId = approxTokens > 30_000 ? "claude-sonnet-4-6" : "claude-opus-4-8";
 
   // Model construction is where the credit gate throws — before any streaming
@@ -241,15 +417,16 @@ When a retrieved chunk includes a \`screenshot_url:\`, show the image inline wit
   const result = streamText({
     model,
     system,
-    messages: cleanMessages,
+    messages: modelMessages,
     onFinish: async ({ text }) => {
       if (persistKey && text) {
+        await persisted;
         await supabase.from("chat_messages").insert({
           ...persistKey,
           user_id: user.id,
           role: "assistant",
           content: text,
-          sources: chunks.map((c) => ({ source: c.source, score: c.score })),
+          sources,
         });
       }
     },

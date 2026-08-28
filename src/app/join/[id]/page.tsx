@@ -8,6 +8,14 @@ import { createClient } from "@/lib/supabase/client";
 import { getAuthUser } from "@/lib/supabase/auth";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import {
+  AttachControls,
+  AttachmentTray,
+  MessageAttachments,
+  toRequestAttachments,
+  useChatAttachments,
+  type ChatAttachment,
+} from "@/components/chat/attachments";
 import { LogoMark } from "@/components/ui/Logo";
 import { Eyebrow } from "@/components/ui/typography";
 
@@ -25,7 +33,11 @@ type Meeting = {
   ended_at: string | null;
   speaker_names: Record<string, string> | null;
 };
-type ChatMsg = { role: "user" | "assistant"; content: string };
+type ChatMsg = {
+  role: "user" | "assistant";
+  content: string;
+  attachments?: ChatAttachment[];
+};
 
 type Phase = "checking" | "join" | "ready" | "error";
 
@@ -351,6 +363,7 @@ function GuestChat({ meetingId }: { meetingId: string }) {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
+  const att = useChatAttachments();
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -361,17 +374,26 @@ function GuestChat({ meetingId }: { meetingId: string }) {
 
   async function send() {
     const content = input.trim();
-    if (!content || streaming) return;
+    const attachments = att.attachments;
+    if ((!content && attachments.length === 0) || streaming) return;
     setInput("");
+    att.clear();
     setError(null);
-    const next: ChatMsg[] = [...messages, { role: "user", content }];
+    const next: ChatMsg[] = [...messages, { role: "user", content, attachments }];
     setMessages([...next, { role: "assistant", content: "" }]);
     setStreaming(true);
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: next, meeting_id: meetingId }),
+        body: JSON.stringify({
+          messages: next.map((m) => ({
+            role: m.role,
+            content: m.content,
+            attachments: toRequestAttachments(m.attachments),
+          })),
+          meeting_id: meetingId,
+        }),
       });
       if (!res.ok || !res.body) {
         setError(
@@ -422,7 +444,12 @@ function GuestChat({ meetingId }: { meetingId: string }) {
               </div>
               <div className="text-[14px] leading-[1.6] text-ink">
                 {m.role === "user" ? (
-                  <div className="whitespace-pre-wrap">{m.content}</div>
+                  <>
+                    <MessageAttachments attachments={m.attachments} />
+                    {m.content && (
+                      <div className="whitespace-pre-wrap">{m.content}</div>
+                    )}
+                  </>
                 ) : (
                   <div className="flex flex-col gap-2 [&_a]:text-cortex [&_a]:underline [&_li]:ml-4 [&_ul]:list-disc">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -440,28 +467,49 @@ function GuestChat({ meetingId }: { meetingId: string }) {
           {error}
         </p>
       )}
-      <div className="flex items-stretch gap-2">
-        <textarea
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send();
-            }
-          }}
-          rows={2}
-          placeholder="Ask…"
-          className="flex-1 resize-none rounded-[6px] border border-mist bg-bone-2 px-3 py-[9px] text-[13px] leading-[1.5] text-ink outline-none"
+      <div
+        className="flex flex-col gap-2"
+        onDrop={att.onDrop}
+        onDragOver={att.onDragOver}
+      >
+        <AttachmentTray
+          attachments={att.attachments}
+          onRemove={att.remove}
+          busy={att.busy}
+          error={att.error}
         />
-        <Button
-          variant="primary"
-          onClick={send}
-          disabled={streaming || !input.trim()}
-          className="self-stretch"
-        >
-          {streaming ? "…" : "Send"}
-        </Button>
+        <div className="flex items-stretch gap-2">
+          <textarea
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onPaste={att.onPaste}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
+            }}
+            rows={2}
+            placeholder="Ask…"
+            className="flex-1 resize-none rounded-[6px] border border-mist bg-bone-2 px-3 py-[9px] text-[13px] leading-[1.5] text-ink outline-none"
+          />
+          <div className="flex items-center gap-[6px]">
+            <AttachControls
+              onCapture={att.capture}
+              onFiles={(files) => void att.addBlobs(files)}
+              busy={att.busy}
+              disabled={streaming}
+            />
+          </div>
+          <Button
+            variant="primary"
+            onClick={send}
+            disabled={streaming || (!input.trim() && att.attachments.length === 0)}
+            className="self-stretch"
+          >
+            {streaming ? "…" : "Send"}
+          </Button>
+        </div>
       </div>
     </div>
   );

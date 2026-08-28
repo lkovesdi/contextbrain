@@ -3,12 +3,14 @@
 import * as React from "react";
 import { createPortal } from "react-dom";
 
-type Size = "sm" | "md" | "lg";
+type Size = "sm" | "md" | "lg" | "xl";
 
 const SIZE: Record<Size, string> = {
   sm: "max-w-[380px]",
   md: "max-w-[480px]",
   lg: "max-w-[640px]",
+  // Lightbox-sized: wide enough for a full screenshot, never past the viewport.
+  xl: "max-w-[min(1100px,94vw)]",
 };
 
 export function Modal({

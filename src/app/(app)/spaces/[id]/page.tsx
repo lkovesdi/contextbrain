@@ -9,6 +9,7 @@ import type { ChipData } from "@/components/context/ContextChip";
 import { SpaceHeader } from "./SpaceHeader";
 import { NewMeetingInSpaceButton } from "./NewMeetingInSpaceButton";
 import { SpaceChatPanel } from "./SpaceChatPanel";
+import { attachmentsFromStored } from "@/lib/chat-attachments";
 
 export const dynamic = "force-dynamic";
 
@@ -72,9 +73,12 @@ export default async function SpaceDetailPage({
       )
       .order("created_at", { ascending: false }),
     supabase.from("integrations").select("provider"),
+    // `*` rather than a column list so the query keeps working before
+    // migration 0022 (attachments) is applied — an unknown column would
+    // otherwise blank the whole history.
     supabase
       .from("chat_messages")
-      .select("role,content")
+      .select("*")
       .eq("space_id", id)
       .order("created_at", { ascending: true })
       .limit(200),
@@ -99,11 +103,16 @@ export default async function SpaceDetailPage({
   const initialMessages = ((chatHistory ?? []) as {
     role: string;
     content: string;
+    attachments?: unknown;
   }[])
-    .filter((m): m is { role: "user" | "assistant"; content: string } =>
-      m.role === "user" || m.role === "assistant"
-    )
-    .filter((m) => m.content.trim().length > 0);
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+      attachments: attachmentsFromStored(m.attachments),
+    }))
+    // Keep screenshot-only turns; drop empty placeholders.
+    .filter((m) => m.content.trim().length > 0 || m.attachments.length > 0);
 
   return (
     <div className="flex h-screen flex-col overflow-hidden">

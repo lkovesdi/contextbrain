@@ -7,6 +7,14 @@ import {
   type Selection,
 } from "@/components/context/ContextSelector";
 import { AssistantMarkdown } from "@/components/chat/AssistantMarkdown";
+import {
+  AttachControls,
+  AttachmentTray,
+  MessageAttachments,
+  toRequestAttachments,
+  useChatAttachments,
+  type ChatAttachment,
+} from "@/components/chat/attachments";
 import type { Provider } from "@/lib/composio";
 import type { ChipData } from "@/components/context/ContextChip";
 import { Button } from "@/components/ui/Button";
@@ -15,7 +23,11 @@ import { useConfirm } from "@/components/ui/ConfirmModal";
 import SendIcon from "@/components/icons/SendIcon";
 import type { AnimatedIconHandle } from "@/components/icons/types";
 
-type Msg = { role: "user" | "assistant"; content: string };
+type Msg = {
+  role: "user" | "assistant";
+  content: string;
+  attachments?: ChatAttachment[];
+};
 
 type PresetSources = {
   external_context_ids?: string[];
@@ -95,6 +107,7 @@ export function SpaceChatPanel({
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const sendIconRef = useRef<AnimatedIconHandle | null>(null);
+  const att = useChatAttachments();
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -122,10 +135,12 @@ export function SpaceChatPanel({
 
   async function send() {
     const content = input.trim();
-    if (!content || streaming) return;
+    const attachments = att.attachments;
+    if ((!content && attachments.length === 0) || streaming) return;
     setInput("");
+    att.clear();
     setError(null);
-    const next: Msg[] = [...messages, { role: "user", content }];
+    const next: Msg[] = [...messages, { role: "user", content, attachments }];
     setMessages(next);
     setStreaming(true);
     setMessages((m) => [...m, { role: "assistant", content: "" }]);
@@ -135,7 +150,11 @@ export function SpaceChatPanel({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          messages: next,
+          messages: next.map((m) => ({
+            role: m.role,
+            content: m.content,
+            attachments: toRequestAttachments(m.attachments),
+          })),
           selection: { ...selection, space_id: spaceId, space_wide: wholeSpace },
           space_id: spaceId,
         }),
@@ -254,32 +273,53 @@ export function SpaceChatPanel({
         </p>
       )}
 
-      <div className="flex items-stretch gap-2">
-        <textarea
-          ref={inputRef}
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send();
-            }
-          }}
-          rows={2}
-          placeholder={`Ask about ${spaceName}…`}
-          className="flex-1 resize-none rounded-[6px] border border-mist bg-bone-2 text-[13px] leading-[1.5] text-ink px-3 py-[9px] outline-none"
+      <div
+        className="flex flex-col gap-2"
+        onDrop={att.onDrop}
+        onDragOver={att.onDragOver}
+      >
+        <AttachmentTray
+          attachments={att.attachments}
+          onRemove={att.remove}
+          busy={att.busy}
+          error={att.error}
         />
-        <Button
-          variant="primary"
-          onClick={send}
-          disabled={streaming || !input.trim()}
-          className="self-stretch"
-          onMouseEnter={() => sendIconRef.current?.startAnimation()}
-          onMouseLeave={() => sendIconRef.current?.stopAnimation()}
-          rightIcon={<SendIcon ref={sendIconRef} size={14} strokeWidth={1.6} />}
-        >
-          {streaming ? "…" : "Send"}
-        </Button>
+        <div className="flex items-stretch gap-2">
+          <textarea
+            ref={inputRef}
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onPaste={att.onPaste}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                send();
+              }
+            }}
+            rows={2}
+            placeholder={`Ask about ${spaceName}…`}
+            className="flex-1 resize-none rounded-[6px] border border-mist bg-bone-2 text-[13px] leading-[1.5] text-ink px-3 py-[9px] outline-none"
+          />
+          <div className="flex items-center gap-[6px]">
+            <AttachControls
+              onCapture={att.capture}
+              onFiles={(files) => void att.addBlobs(files)}
+              busy={att.busy}
+              disabled={streaming}
+            />
+          </div>
+          <Button
+            variant="primary"
+            onClick={send}
+            disabled={streaming || (!input.trim() && att.attachments.length === 0)}
+            className="self-stretch"
+            onMouseEnter={() => sendIconRef.current?.startAnimation()}
+            onMouseLeave={() => sendIconRef.current?.stopAnimation()}
+            rightIcon={<SendIcon ref={sendIconRef} size={14} strokeWidth={1.6} />}
+          >
+            {streaming ? "…" : "Send"}
+          </Button>
+        </div>
       </div>
     </div>
   );
@@ -303,7 +343,12 @@ function ChatMsg({ msg, streaming }: { msg: Msg; streaming: boolean }) {
       </div>
       <div className="text-[14px] leading-[1.6] text-ink">
         {isUser ? (
-          <div className="whitespace-pre-wrap">{msg.content}</div>
+          <>
+            <MessageAttachments attachments={msg.attachments} />
+            {msg.content && (
+              <div className="whitespace-pre-wrap">{msg.content}</div>
+            )}
+          </>
         ) : (
           <AssistantMarkdown content={msg.content} />
         )}

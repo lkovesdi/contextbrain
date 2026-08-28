@@ -142,6 +142,14 @@ macOS only for now. Windows builds (signing cert, MSI) are deferred — see Phas
 
 ---
 
+## Screenshots into chat (macOS)
+
+The chat composer's camera button calls the `capture_screenshot` command (`src-tauri/src/lib.rs`), which shells out to macOS's own `/usr/sbin/screencapture -i` — the ⌘⇧4 crosshair (drag a region, Space for window mode, Esc to cancel). The PNG comes back over IPC as base64, is downscaled client-side to ≤1568px, and is sent to the model as an image part.
+
+The first capture makes macOS prompt for **Screen Recording** permission for ContextBrain (System Settings → Privacy & Security → Screen & System Audio Recording). Until it's granted *and the app relaunched*, captures come back with other apps' windows blanked — that's the OS's behaviour, not a bug in the command. No `Info.plist` key is needed for this prompt.
+
+In the browser (and in desktop builds predating the command), the same button falls back to `getDisplayMedia()` (Chrome/Edge/Safari share picker → one frame), and pasting/dropping an image into the composer always works.
+
 ## Icons
 
 Drop a 1024×1024 PNG anywhere (a `design/` folder works), then:
