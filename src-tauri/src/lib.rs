@@ -7,7 +7,7 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_opener::init())
         .manage(PendingUpdate::default())
-        .manage(ScreenRecording::default())
+        .manage(RegionPicker::default())
         .setup(|app| {
             // First-launch hook. Phase 2 will register the Swift audio sidecar.
             //
@@ -132,8 +132,10 @@ pub fn run() {
             widget_ready,
             focus_main,
             capture_screenshot,
-            capture_screen_recording,
-            stop_screen_recording
+            pick_screen_region,
+            region_picked,
+            region_cancelled,
+            capture_region_frame
         ]);
 
     let app = builder
@@ -464,91 +466,188 @@ async fn capture_screenshot(app: tauri::AppHandle) -> Result<Option<String>, Str
     }
 }
 
-/// The `screencapture` process behind an in-progress screen recording, so
-/// the in-app Stop button can end it.
+/// Where a `pick_screen_region` call is waiting for the overlay to answer.
 #[derive(Default)]
-struct ScreenRecording(std::sync::Mutex<Option<u32>>);
+struct RegionPicker(std::sync::Mutex<Option<std::sync::mpsc::Sender<Option<Region>>>>);
 
-/// Screen recording for the chat composer. Runs `screencapture -Jvideo` —
-/// the region picker in video mode. NOT `-i`: screencapture rejects video
-/// with -i ("video not valid with -i") and exits before any UI shows, which
-/// looked like an instant cancel (v0.2.13). Recording runs until the user
-/// stops it (the ■ macOS puts in the menu bar, or our Stop → SIGINT) or the
-/// -V cap; SIGINT is ignored while the picker is still up, where Escape
-/// cancels. `-g` records the default mic so narration can be transcribed.
-/// Returns the finished .mov as raw bytes (empty = cancelled in the picker);
-/// frames and audio are extracted in the webview, so no ffmpeg/AVFoundation
-/// here. Same Screen Recording permission story as `capture_screenshot`.
+/// A screen rectangle in global points — the coordinate space
+/// `screencapture -R x,y,w,h` takes.
+#[derive(Clone, Copy, serde::Serialize)]
+struct Region {
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+}
+
+const PICKER_PREFIX: &str = "region-picker-";
+
+fn close_region_pickers(app: &tauri::AppHandle) {
+    for (label, win) in app.webview_windows() {
+        if label.starts_with(PICKER_PREFIX) {
+            let _ = win.close();
+        }
+    }
+}
+
+/// Show a drag-to-select overlay (public/region-picker.html) on every monitor
+/// and resolve with the chosen rectangle, or None on Escape. macOS's own
+/// picker can't do this job: `screencapture` has no interactive *video*
+/// selection — `-J video` (with or without -U) just starts recording the
+/// whole screen — so the app draws its own and the webview then samples the
+/// rectangle with `capture_region_frame`.
 #[tauri::command]
-async fn capture_screen_recording(
+async fn pick_screen_region(
     app: tauri::AppHandle,
-    state: tauri::State<'_, ScreenRecording>,
-) -> Result<tauri::ipc::Response, String> {
+    state: tauri::State<'_, RegionPicker>,
+) -> Result<Option<Region>, String> {
+    let (tx, rx) = std::sync::mpsc::channel::<Option<Region>>();
+    {
+        let mut slot = state.0.lock().map_err(|e| e.to_string())?;
+        if slot.is_some() {
+            return Err("The area picker is already open.".to_string());
+        }
+        *slot = Some(tx);
+    }
+
+    let monitors = app.available_monitors().map_err(|e| e.to_string())?;
+    let handle = app.clone();
+    let spawned = app.run_on_main_thread(move || {
+        for (i, m) in monitors.iter().enumerate() {
+            let scale = m.scale_factor();
+            let pos = m.position().to_logical::<f64>(scale);
+            let size = m.size().to_logical::<f64>(scale);
+            let built = tauri::WebviewWindowBuilder::new(
+                &handle,
+                format!("{PICKER_PREFIX}{i}"),
+                tauri::WebviewUrl::App("region-picker.html".into()),
+            )
+            .title("Select area to record")
+            .decorations(false)
+            .transparent(true)
+            .shadow(false)
+            .always_on_top(true)
+            .skip_taskbar(true)
+            .resizable(false)
+            .accept_first_mouse(true)
+            .visible_on_all_workspaces(true)
+            .focused(i == 0)
+            .position(pos.x, pos.y)
+            .inner_size(size.width, size.height)
+            .build();
+            if let Err(e) = built {
+                eprintln!("region picker: window {i} failed: {e}");
+            }
+        }
+    });
+    if let Err(e) = spawned {
+        if let Ok(mut slot) = state.0.lock() {
+            *slot = None;
+        }
+        return Err(e.to_string());
+    }
+
+    // Block a worker thread, not the async runtime, until the page answers.
+    let picked = tauri::async_runtime::spawn_blocking(move || rx.recv().unwrap_or(None))
+        .await
+        .map_err(|e| e.to_string())?;
+    if let Ok(mut slot) = state.0.lock() {
+        *slot = None;
+    }
+    close_region_pickers(&app);
+    Ok(picked)
+}
+
+/// Called by the overlay page on mouse-up with window-local CSS px; the
+/// window's own origin turns that into global screen points.
+#[tauri::command]
+fn region_picked(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, RegionPicker>,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+) {
+    let scale = window.scale_factor().unwrap_or(1.0);
+    let origin = window
+        .outer_position()
+        .map(|p| p.to_logical::<f64>(scale))
+        .unwrap_or(tauri::LogicalPosition::new(0.0, 0.0));
+    let region = Region {
+        x: (origin.x + x).round(),
+        y: (origin.y + y).round(),
+        w: w.round(),
+        h: h.round(),
+    };
+    if let Ok(mut slot) = state.0.lock() {
+        if let Some(tx) = slot.take() {
+            let _ = tx.send(Some(region));
+        }
+    }
+}
+
+/// Called by the overlay page on Escape.
+#[tauri::command]
+fn region_cancelled(state: tauri::State<'_, RegionPicker>) {
+    if let Ok(mut slot) = state.0.lock() {
+        if let Some(tx) = slot.take() {
+            let _ = tx.send(None);
+        }
+    }
+}
+
+/// One still of a screen rectangle (global points) as base64 JPEG. The
+/// desktop recording path samples these ~once a second: no video file, no
+/// signals to a `screencapture -v` process (which just dies on SIGINT
+/// without writing anything), and Stop is instant because the webview owns
+/// the loop. `-C` includes the cursor so "watch me click" reads right; `-x`
+/// keeps it silent.
+#[tauri::command]
+async fn capture_region_frame(
+    app: tauri::AppHandle,
+    x: f64,
+    y: f64,
+    w: f64,
+    h: f64,
+) -> Result<Option<String>, String> {
     #[cfg(target_os = "macos")]
     {
+        use base64::Engine;
         let dir = app.path().app_cache_dir().map_err(|e| e.to_string())?;
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let stamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_millis())
+            .map(|d| d.as_micros())
             .unwrap_or(0);
-        let file = dir.join(format!("recording-{stamp}.mov"));
-        let mut child = std::process::Command::new("/usr/sbin/screencapture")
-            .args(["-Jvideo", "-x", "-g", "-V", "60"])
-            .arg(&file)
-            .spawn()
-            .map_err(|e| e.to_string())?;
-        if let Ok(mut slot) = state.0.lock() {
-            *slot = Some(child.id());
-        }
-        let status = tauri::async_runtime::spawn_blocking(move || child.wait())
-            .await
-            .map_err(|e| e.to_string())?
-            .map_err(|e| e.to_string())?;
-        if let Ok(mut slot) = state.0.lock() {
-            *slot = None;
-        }
-        // Escape in the picker: exit 1, no file. Stopped normally (the menu
-        // bar ■ or SIGINT): exit 0 with a finalized movie. Give the file a
-        // moment to land after a clean exit before calling it a cancel.
-        if status.success() {
-            for _ in 0..30 {
-                if file.exists() {
-                    break;
-                }
-                std::thread::sleep(std::time::Duration::from_millis(100));
-            }
-        }
-        if !file.exists() {
-            return Ok(tauri::ipc::Response::new(Vec::<u8>::new()));
+        let file = dir.join(format!("frame-{stamp}.jpg"));
+        let target = file.clone();
+        let rect = format!("{},{},{},{}", x.round(), y.round(), w.round(), h.round());
+        let status = tauri::async_runtime::spawn_blocking(move || {
+            std::process::Command::new("/usr/sbin/screencapture")
+                .args(["-x", "-C", "-t", "jpg", "-R", &rect])
+                .arg(&target)
+                .status()
+        })
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| e.to_string())?;
+        if !status.success() || !file.exists() {
+            let _ = std::fs::remove_file(&file);
+            return Ok(None);
         }
         let bytes = std::fs::read(&file).map_err(|e| e.to_string())?;
         let _ = std::fs::remove_file(&file);
-        Ok(tauri::ipc::Response::new(bytes))
+        if bytes.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(base64::engine::general_purpose::STANDARD.encode(bytes)))
     }
     #[cfg(not(target_os = "macos"))]
     {
-        let _ = (app, state);
+        let _ = (app, x, y, w, h);
         Err("Screen recording is only available on macOS for now.".to_string())
     }
-}
-
-/// End an in-progress screen recording. SIGINT is how `screencapture`
-/// finalizes the movie from the command line (Ctrl-C), so the pending
-/// `capture_screen_recording` call then resolves with the file.
-#[tauri::command]
-fn stop_screen_recording(state: tauri::State<'_, ScreenRecording>) {
-    #[cfg(target_os = "macos")]
-    if let Ok(slot) = state.0.lock() {
-        if let Some(pid) = *slot {
-            // SAFETY: plain signal send to a pid we spawned and still track.
-            unsafe {
-                libc::kill(pid as libc::pid_t, libc::SIGINT);
-            }
-        }
-    }
-    #[cfg(not(target_os = "macos"))]
-    let _ = state;
 }
 
 /// Stop the active recording (called by the widget's stop button). The main

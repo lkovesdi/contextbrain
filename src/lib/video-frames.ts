@@ -1,8 +1,9 @@
 // Turns a screen recording into what a model can read: a handful of
 // timestamped frames (dedup'd — a static screen yields one frame, a flow
 // yields one per visible change) and a 16 kHz mono WAV of the narration for
-// transcription. Runs entirely in the browser off a <video> element and
-// canvas — no ffmpeg, works on the desktop .mov and the browser .webm alike.
+// transcription. Runs entirely in the browser — no ffmpeg. Two inputs:
+// a video file (browser MediaRecorder) via extractFrames, or stills already
+// sampled over time (desktop `screencapture -R` loop) via dedupeFrames.
 
 import { MAX_RECORDING_SECONDS, MAX_VIDEO_FRAMES } from "@/lib/chat-attachments";
 import { encodeCanvas, fitScale, type NormalizedImage } from "@/lib/screenshot";
@@ -67,10 +68,10 @@ async function seek(video: HTMLVideoElement, t: number): Promise<void> {
 }
 
 function fingerprint(
-  video: HTMLVideoElement,
+  source: CanvasImageSource,
   ctx: CanvasRenderingContext2D
 ): Uint8ClampedArray {
-  ctx.drawImage(video, 0, 0, FP_W, FP_H);
+  ctx.drawImage(source, 0, 0, FP_W, FP_H);
   const { data } = ctx.getImageData(0, 0, FP_W, FP_H);
   const gray = new Uint8ClampedArray(FP_W * FP_H);
   for (let i = 0, j = 0; i < data.length; i += 4, j++) {
@@ -83,6 +84,73 @@ function meanDiff(a: Uint8ClampedArray, b: Uint8ClampedArray): number {
   let sum = 0;
   for (let i = 0; i < a.length; i++) sum += Math.abs(a[i] - b[i]);
   return sum / a.length;
+}
+
+function fingerprintCanvas(): CanvasRenderingContext2D {
+  const c = document.createElement("canvas");
+  c.width = FP_W;
+  c.height = FP_H;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  if (!ctx) throw new Error("Canvas isn't available in this browser.");
+  return ctx;
+}
+
+/** Too many changes → keep ≤ max, evenly spaced, both ends included. */
+function thinEvenly<T>(items: T[], max: number): T[] {
+  if (items.length <= max) return items;
+  const out: T[] = [];
+  for (let i = 0; i < max; i++) {
+    const idx = Math.round((i * (items.length - 1)) / (max - 1));
+    if (out[out.length - 1] !== items[idx]) out.push(items[idx]);
+  }
+  return out;
+}
+
+async function encodeScaled(
+  source: CanvasImageSource,
+  srcWidth: number,
+  srcHeight: number
+): Promise<NormalizedImage> {
+  const scale = fitScale(srcWidth, srcHeight);
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.max(1, Math.round(srcWidth * scale));
+  canvas.height = Math.max(1, Math.round(srcHeight * scale));
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas isn't available in this browser.");
+  ctx.drawImage(source, 0, 0, canvas.width, canvas.height);
+  return encodeCanvas(canvas);
+}
+
+/** Desktop path: stills sampled ~1/s → keep the ones where the picture
+    changed (first and last always), ≤ maxFrames, downscaled + encoded. */
+export async function dedupeFrames(
+  stills: Array<{ t: number; blob: Blob }>,
+  maxFrames = MAX_VIDEO_FRAMES
+): Promise<ExtractedFrame[]> {
+  if (!stills.length) return [];
+  const fpCtx = fingerprintCanvas();
+  const kept: Array<{ t: number; bitmap: ImageBitmap }> = [];
+  let lastFp: Uint8ClampedArray | null = null;
+  for (let i = 0; i < stills.length; i++) {
+    const bitmap = await createImageBitmap(stills[i].blob);
+    const fp = fingerprint(bitmap, fpCtx);
+    const isEdge = i === 0 || i === stills.length - 1;
+    if (isEdge || !lastFp || meanDiff(fp, lastFp) > CHANGE_THRESHOLD) {
+      kept.push({ t: stills[i].t, bitmap });
+      lastFp = fp;
+    } else {
+      bitmap.close();
+    }
+  }
+  const chosen = thinEvenly(kept, maxFrames);
+  const frames: ExtractedFrame[] = [];
+  for (const k of kept) {
+    if (chosen.includes(k)) {
+      frames.push({ t: k.t, image: await encodeScaled(k.bitmap, k.bitmap.width, k.bitmap.height) });
+    }
+    k.bitmap.close();
+  }
+  return frames;
 }
 
 /** Sample ≤ maxFrames frames where the picture actually changed. */
@@ -109,11 +177,7 @@ export async function extractFrames(
       candidates.push(last);
     }
 
-    const fpCanvas = document.createElement("canvas");
-    fpCanvas.width = FP_W;
-    fpCanvas.height = FP_H;
-    const fpCtx = fpCanvas.getContext("2d", { willReadFrequently: true });
-    if (!fpCtx) throw new Error("Canvas isn't available in this browser.");
+    const fpCtx = fingerprintCanvas();
 
     // Keep an instant when it differs from the last kept one; always keep
     // the first and the last so the start and end states are both present.
@@ -129,29 +193,14 @@ export async function extractFrames(
       }
     }
 
-    // Too many changes → thin evenly, keeping both ends.
-    let chosen = kept;
-    if (kept.length > maxFrames) {
-      chosen = [];
-      for (let i = 0; i < maxFrames; i++) {
-        const idx = Math.round((i * (kept.length - 1)) / (maxFrames - 1));
-        if (chosen[chosen.length - 1] !== kept[idx]) chosen.push(kept[idx]);
-      }
-    }
-
-    const scale = fitScale(video.videoWidth, video.videoHeight);
-    const width = Math.max(1, Math.round(video.videoWidth * scale));
-    const height = Math.max(1, Math.round(video.videoHeight * scale));
+    const chosen = thinEvenly(kept, maxFrames);
     const frames: ExtractedFrame[] = [];
     for (const t of chosen) {
       await seek(video, t);
-      const canvas = document.createElement("canvas");
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Canvas isn't available in this browser.");
-      ctx.drawImage(video, 0, 0, width, height);
-      frames.push({ t, image: await encodeCanvas(canvas) });
+      frames.push({
+        t,
+        image: await encodeScaled(video, video.videoWidth, video.videoHeight),
+      });
     }
     return { frames, duration };
   } finally {

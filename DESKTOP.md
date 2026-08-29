@@ -152,9 +152,18 @@ In the browser (and in desktop builds predating the command), the same button fa
 
 ### Screen recordings
 
-The video button calls `capture_screen_recording`, which runs `screencapture -Jvideo -x -g -V 60 <file>.mov` — the region picker in video mode, mic audio included (`-g`) so narration can be transcribed, capped at 60 s. Note the absence of `-i`: `screencapture` rejects `-v`/video together with `-i` ("video not valid with -i") and exits immediately, which is exactly what v0.2.13 shipped. While the picker is up, SIGINT is ignored (Escape cancels); once recording, SIGINT stops it. Recording ends via the in-app ■ (`stop_screen_recording` sends the child SIGINT — the same thing Ctrl-C does in Terminal, and `screencapture` finalizes the movie on it) or macOS's own ■ in the menu bar. The finished `.mov` returns over IPC as raw bytes (`tauri::ipc::Response`), never touching disk beyond the app cache.
+There is no video file on desktop. Two facts about macOS's `screencapture` forced that (all verified 2026-08-28):
 
-No model takes video, so the webview reduces it (`src/lib/video-frames.ts`): frames are sampled once a second, kept only where the picture changed (≤12), downscaled, and the audio is decoded to 16 kHz WAV and sent to `/api/chat/transcribe` (Deepgram pre-recorded). What the model gets is "N timestamped frames + what you said". The browser path is the same pipeline on a `getDisplayMedia` + `MediaRecorder` webm.
+- It has **no interactive video region picker**. `-i` is rejected together with video ("video not valid with -i"), and `-J video` — with or without the `-U` toolbar flag — simply starts recording the whole screen immediately (v0.2.13 exited instantly; v0.2.14 auto-recorded with no way to pick an area).
+- A `screencapture -v` recording **can't be stopped gracefully by a signal**. SIGINT/SIGTERM kill it without writing the movie (Ctrl-C only ever "worked" because `-V` ran out); the only clean stop is the ■ macOS puts in the menu bar, or the `-V` cap.
+
+So the video button does this instead:
+
+1. `pick_screen_region` opens `public/region-picker.html` as a transparent, always-on-top window on every monitor; the user drags a rectangle (Esc cancels). The page reports window-local px via `region_picked`; Rust adds the window origin to get global points and resolves the waiting command, then closes the overlays.
+2. The webview (`src/lib/screenshot.ts`, `recordViaDesktop`) records the mic with `MediaRecorder` for narration and calls `capture_region_frame` about once a second — `screencapture -x -C -t jpg -R x,y,w,h`, a plain still with the cursor — for up to 60 s. Stop just ends the loop, so it's instant.
+3. `src/lib/video-frames.ts` (`dedupeFrames`) keeps the stills where the picture changed (≤12), downscales them, decodes the narration to 16 kHz WAV, and `/api/chat/transcribe` (Deepgram pre-recorded) turns that into text. The model gets "N timestamped frames + what you said" — the same thing the browser path produces from a `getDisplayMedia` + `MediaRecorder` webm via `extractFrames`.
+
+Screen Recording permission is the same one screenshots use; the mic prompt is the same one meetings use.
 
 ## Icons
 

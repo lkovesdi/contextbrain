@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-region-cancelled"
+description = "Enables the region_cancelled command without any pre-configured scope."
+commands.allow = ["region_cancelled"]
+
+[[permission]]
+identifier = "deny-region-cancelled"
+description = "Denies the region_cancelled command without any pre-configured scope."
+commands.deny = ["region_cancelled"]

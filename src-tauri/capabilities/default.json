@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Core capabilities for the main window. Deep-link + updater are added per-plugin; audio + filesystem will be scoped in later phases when those commands land.",
-  "windows": ["main", "meeting-popup", "update-popup"],
+  "windows": ["main", "meeting-popup", "update-popup", "region-picker-*"],
   "permissions": [
     "core:default",
     "deep-link:default",
@@ -15,7 +15,9 @@
     "allow-pending-update-version",
     "allow-pending-update-notes",
     "allow-capture-screenshot",
-    "allow-capture-screen-recording",
-    "allow-stop-screen-recording"
+    "allow-pick-screen-region",
+    "allow-capture-region-frame",
+    "allow-region-picked",
+    "allow-region-cancelled"
   ]
 }

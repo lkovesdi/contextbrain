@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Select area to record</title>
+    <!--
+      Drag-to-select overlay for screen recordings. One transparent,
+      always-on-top window per monitor (see pick_screen_region in
+      src-tauri/src/lib.rs). macOS's own picker can't be used here:
+      `screencapture` has no interactive *video* region selection, so the app
+      draws its own and feeds the rectangle to `screencapture -R`.
+      Native local page like meeting-popup.html — not the themed app, so
+      colors are literal by design.
+    -->
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: transparent;
+        cursor: crosshair;
+        user-select: none;
+        -webkit-user-select: none;
+        font-family: -apple-system, "SF Pro Text", system-ui, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      #veil { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.28); }
+      #sel {
+        position: fixed;
+        display: none;
+        border: 1.5px solid #ffffff;
+        /* The huge shadow dims everything outside the selection, so the
+           selection itself reads as a clear "hole". */
+        box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.28);
+      }
+      #dims {
+        position: fixed;
+        display: none;
+        padding: 3px 7px;
+        border-radius: 6px;
+        background: rgba(20, 20, 26, 0.92);
+        color: #f2f1ed;
+        font: 500 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+        pointer-events: none;
+        white-space: nowrap;
+      }
+      #hint {
+        position: fixed;
+        left: 50%;
+        top: 44px;
+        transform: translateX(-50%);
+        padding: 9px 15px;
+        border-radius: 999px;
+        background: rgba(20, 20, 26, 0.92);
+        color: #f2f1ed;
+        font-size: 13px;
+        letter-spacing: 0.01em;
+        pointer-events: none;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+      }
+      #hint kbd {
+        font: 500 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+        padding: 1px 5px;
+        border-radius: 4px;
+        background: rgba(255, 255, 255, 0.12);
+      }
+    </style>
+  </head>
+  <body>
+    <div id="veil"></div>
+    <div id="sel"></div>
+    <div id="dims"></div>
+    <div id="hint">Drag to select the area to record &nbsp;·&nbsp; <kbd>esc</kbd> to cancel</div>
+    <script>
+      function invoke(cmd, args) {
+        try {
+          if (window.__TAURI__ && window.__TAURI__.core) {
+            return window.__TAURI__.core.invoke(cmd, args || {});
+          }
+          if (window.__TAURI_INTERNALS__ && window.__TAURI_INTERNALS__.invoke) {
+            return window.__TAURI_INTERNALS__.invoke(cmd, args || {});
+          }
+        } catch (e) {}
+        return Promise.resolve();
+      }
+
+      var veil = document.getElementById("veil");
+      var sel = document.getElementById("sel");
+      var dims = document.getElementById("dims");
+      var hint = document.getElementById("hint");
+      var start = null;
+      var sent = false;
+
+      function rectFrom(a, b) {
+        var x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+        return { x: x, y: y, w: Math.abs(a.x - b.x), h: Math.abs(a.y - b.y) };
+      }
+      function paint(r) {
+        sel.style.left = r.x + "px";
+        sel.style.top = r.y + "px";
+        sel.style.width = r.w + "px";
+        sel.style.height = r.h + "px";
+        dims.textContent = Math.round(r.w) + " × " + Math.round(r.h);
+        // Label below the selection, or above it when there's no room.
+        var below = r.y + r.h + 8;
+        dims.style.left = r.x + "px";
+        dims.style.top = (below + 24 < window.innerHeight ? below : Math.max(4, r.y - 26)) + "px";
+      }
+      function reset() {
+        start = null;
+        sel.style.display = "none";
+        dims.style.display = "none";
+        veil.style.display = "block";
+        hint.style.display = "block";
+      }
+
+      window.addEventListener("mousedown", function (e) {
+        if (e.button !== 0 || sent) return;
+        start = { x: e.clientX, y: e.clientY };
+        veil.style.display = "none";
+        hint.style.display = "none";
+        sel.style.display = "block";
+        dims.style.display = "block";
+        paint(rectFrom(start, start));
+      });
+      window.addEventListener("mousemove", function (e) {
+        if (start) paint(rectFrom(start, { x: e.clientX, y: e.clientY }));
+      });
+      window.addEventListener("mouseup", function (e) {
+        if (!start || sent) return;
+        var r = rectFrom(start, { x: e.clientX, y: e.clientY });
+        if (r.w < 12 || r.h < 12) { reset(); return; }
+        sent = true;
+        invoke("region_picked", { x: r.x, y: r.y, w: r.w, h: r.h });
+      });
+      document.addEventListener("keydown", function (e) {
+        if (e.key === "Escape" && !sent) { sent = true; invoke("region_cancelled"); }
+      });
+      // Focus so Escape works without a click first.
+      window.focus();
+    </script>
+  </body>
+</html>

@@ -29,7 +29,7 @@ import {
   startScreenRecording,
   type RecordingHandle,
 } from "@/lib/screenshot";
-import { extractAudioWav, extractFrames } from "@/lib/video-frames";
+import { dedupeFrames, extractAudioWav, extractFrames } from "@/lib/video-frames";
 
 export type { ChatAttachment } from "@/lib/chat-attachments";
 export { toRequestAttachments } from "@/lib/chat-attachments";
@@ -113,16 +113,30 @@ export function useChatAttachments() {
       const handle = await startScreenRecording();
       handleRef.current = handle;
       setRecording({ phase: "recording", startedAt: Date.now(), source: handle.source });
-      const blob = await handle.done;
+      const result = await handle.done;
       handleRef.current = null;
-      if (!blob) return;
+      if (!result) return;
 
       setRecording({ phase: "processing", step: "Picking frames…" });
-      const { frames, duration } = await extractFrames(blob);
+      let frames;
+      let duration: number;
+      let audioSource: Blob | null;
+      if (result.kind === "video") {
+        const r = await extractFrames(result.blob);
+        frames = r.frames;
+        duration = r.duration;
+        audioSource = result.blob;
+      } else {
+        frames = await dedupeFrames(result.frames);
+        duration = result.duration;
+        audioSource = result.audio;
+      }
       if (!frames.length) throw new Error("Couldn't read that recording.");
 
       let transcript: string | null = null;
-      const wav = await extractAudioWav(blob).catch(() => null);
+      const wav = audioSource
+        ? await extractAudioWav(audioSource).catch(() => null)
+        : null;
       if (wav) {
         setRecording({ phase: "processing", step: "Transcribing narration…" });
         try {
@@ -456,9 +470,7 @@ export function AttachmentTray({
               <span className="h-[6px] w-[6px] rounded-full bg-pulse [animation:mb-pulse_1.4s_infinite]" />
               Recording <Elapsed since={recording.startedAt} />
               <span className="normal-case tracking-normal text-slate-2">
-                {recording.source === "desktop"
-                  ? "— drag an area to start; stop with ■ in the menu bar (or here). Esc cancels."
-                  : "— press ■ when done"}
+                — press ■ when done
               </span>
             </span>
           )}

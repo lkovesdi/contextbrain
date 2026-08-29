@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-region-picked"
+description = "Enables the region_picked command without any pre-configured scope."
+commands.allow = ["region_picked"]
+
+[[permission]]
+identifier = "deny-region-picked"
+description = "Denies the region_picked command without any pre-configured scope."
+commands.deny = ["region_picked"]

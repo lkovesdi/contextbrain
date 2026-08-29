@@ -1,6 +1,6 @@
 [package]
 name = "contextbrain"
-version = "0.2.14"
+version = "0.2.15"
 description = "ContextBrain desktop"
 edition = "2021"
 rust-version = "1.77"
@@ -40,8 +40,6 @@ base64 = "0.22"
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", features = ["objc2-core-foundation"] }
 objc2-app-kit = { version = "0.3.2", features = ["NSView", "NSResponder", "NSWindow", "NSEvent", "NSPanel", "NSGraphicsContext", "objc2-core-foundation"] }
-# SIGINT to the `screencapture` child to end a screen recording.
-libc = "0.2"
 
 [features]
 default = ["custom-protocol"]

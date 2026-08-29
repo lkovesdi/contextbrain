@@ -6,11 +6,15 @@
 //     the ⌘⇧4 crosshair, region or window, any app.
 //   - Browser: getDisplayMedia() → one frame off the shared window/screen.
 // Recordings:
-//   - Desktop: `capture_screen_recording` runs `screencapture -v -i` — the
-//     region picker in video mode; stops via our Stop button (SIGINT) or the
-//     menu bar ■; the finished .mov comes back over IPC as raw bytes.
+//   - Desktop: `pick_screen_region` shows our own drag-to-select overlay,
+//     then the webview samples that rectangle ~once a second with
+//     `capture_region_frame` (`screencapture -R`, a still) while recording
+//     the mic here. No video file at all — macOS's CLI has no interactive
+//     video picker and a `screencapture -v` process can't be stopped
+//     gracefully (any signal kills it without writing the movie), whereas
+//     stills are instant and Stop is just ending the loop.
 //   - Browser: getDisplayMedia() + the mic → MediaRecorder (webm / mp4).
-// Recordings are then reduced to frames + a narration transcript in
+// Either way the result is reduced to frames + a narration transcript in
 // video-frames.ts — no model takes video, so that IS the video.
 // Paste (⌘V) and drag-drop are handled by the composer hook and land here
 // only for normalization.
@@ -211,12 +215,22 @@ export async function captureScreenshot(): Promise<Blob | null> {
 
 // ---- Recordings -----------------------------------------------------------
 
+/** What a recording produces: a video file (browser), or stills already
+    sampled over time plus a separate narration track (desktop). */
+export type RecordingResult =
+  | { kind: "video"; blob: Blob }
+  | {
+      kind: "frames";
+      frames: Array<{ t: number; blob: Blob }>;
+      audio: Blob | null;
+      duration: number;
+    };
+
 export type RecordingHandle = {
-  /** Ask the recording to end; `done` resolves once the file is finalized. */
+  /** Ask the recording to end; `done` resolves once it's finalized. */
   stop: () => void;
   /** The finished recording, or null if the user cancelled before recording. */
-  done: Promise<Blob | null>;
-  /** Where the recording is being driven from — the tray words its hint on it. */
+  done: Promise<RecordingResult | null>;
   source: "desktop" | "browser";
 };
 
@@ -230,28 +244,104 @@ export function canRecordScreen(): boolean {
   );
 }
 
-function bytesToBlob(raw: unknown, type: string): Blob | null {
-  // Custom-protocol IPC hands back an ArrayBuffer; the postMessage fallback
-  // serializes raw bodies as a plain number array.
-  let bytes: Uint8Array<ArrayBuffer> | null = null;
-  if (raw instanceof ArrayBuffer) bytes = new Uint8Array(raw);
-  else if (raw instanceof Uint8Array) bytes = Uint8Array.from(raw);
-  else if (Array.isArray(raw)) bytes = Uint8Array.from(raw as number[]);
-  if (!bytes || bytes.byteLength === 0) return null;
-  return new Blob([bytes], { type });
+type Region = { x: number; y: number; w: number; h: number };
+
+/** Mic-only recorder for narration on the desktop path. Optional: no
+    permission or no MediaRecorder just means no transcript. */
+async function startNarration(): Promise<{
+  stop: () => Promise<Blob | null>;
+} | null> {
+  if (typeof MediaRecorder !== "function") return null;
+  let mic: MediaStream;
+  try {
+    mic = await navigator.mediaDevices.getUserMedia({ audio: true });
+  } catch {
+    return null;
+  }
+  const mimeType = ["audio/mp4", "audio/webm;codecs=opus", "audio/webm"].find((t) =>
+    MediaRecorder.isTypeSupported(t)
+  );
+  let recorder: MediaRecorder;
+  try {
+    recorder = new MediaRecorder(mic, mimeType ? { mimeType } : {});
+  } catch {
+    mic.getTracks().forEach((t) => t.stop());
+    return null;
+  }
+  const chunks: Blob[] = [];
+  recorder.ondataavailable = (e) => {
+    if (e.data.size > 0) chunks.push(e.data);
+  };
+  recorder.start(1000);
+  return {
+    stop: () =>
+      new Promise<Blob | null>((resolve) => {
+        const finish = () => {
+          mic.getTracks().forEach((t) => t.stop());
+          resolve(chunks.length ? new Blob(chunks, { type: recorder.mimeType || "audio/mp4" }) : null);
+        };
+        if (recorder.state === "inactive") {
+          finish();
+          return;
+        }
+        recorder.onstop = finish;
+        recorder.onerror = finish;
+        recorder.stop();
+      }),
+  };
 }
 
-function recordViaDesktop(): RecordingHandle {
-  const done = invoke<unknown>("capture_screen_recording")
-    .then((raw) => bytesToBlob(raw, "video/quicktime"))
-    .catch((e) => {
+async function recordViaDesktop(): Promise<RecordingHandle> {
+  let region: Region | null;
+  try {
+    region = await invoke<Region | null>("pick_screen_region");
+  } catch (e) {
+    throw mapInvokeError(e, "Couldn't open the area picker.");
+  }
+  if (!region) {
+    return { source: "desktop", stop: () => {}, done: Promise.resolve(null) };
+  }
+  const rect = region;
+  // Let the overlay actually disappear before the first still.
+  await new Promise((r) => setTimeout(r, 250));
+
+  const narration = await startNarration();
+  const frames: Array<{ t: number; blob: Blob }> = [];
+  const startedAt = Date.now();
+  let stopped = false;
+  let wake: (() => void) | null = null;
+
+  const done = (async (): Promise<RecordingResult | null> => {
+    try {
+      while (!stopped) {
+        const t = (Date.now() - startedAt) / 1000;
+        if (t >= MAX_RECORDING_SECONDS) break;
+        const b64 = await invoke<string | null>("capture_region_frame", rect);
+        if (b64) frames.push({ t, blob: base64ToBlob(b64, "image/jpeg") });
+        if (stopped) break;
+        // ~1 fps net of capture time; stop() wakes this early.
+        const spent = Date.now() - startedAt - t * 1000;
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+          setTimeout(resolve, Math.max(0, 1000 - spent));
+        });
+        wake = null;
+      }
+    } catch (e) {
+      await narration?.stop();
       throw mapInvokeError(e, "Recording failed.");
-    });
+    }
+    const duration = Math.min((Date.now() - startedAt) / 1000, MAX_RECORDING_SECONDS);
+    const audio = (await narration?.stop()) ?? null;
+    return frames.length ? { kind: "frames", frames, audio, duration } : null;
+  })();
+
   return {
     source: "desktop",
     done,
     stop: () => {
-      void invoke("stop_screen_recording").catch(() => {});
+      stopped = true;
+      wake?.();
     },
   };
 }
@@ -302,10 +392,14 @@ async function recordViaBrowser(): Promise<RecordingHandle> {
     display.getTracks().forEach((t) => t.stop());
     mic?.getTracks().forEach((t) => t.stop());
   };
-  const done = new Promise<Blob | null>((resolve, reject) => {
+  const done = new Promise<RecordingResult | null>((resolve, reject) => {
     recorder.onstop = () => {
       cleanup();
-      resolve(chunks.length ? new Blob(chunks, { type: recorder.mimeType }) : null);
+      resolve(
+        chunks.length
+          ? { kind: "video", blob: new Blob(chunks, { type: recorder.mimeType }) }
+          : null
+      );
     };
     recorder.onerror = () => {
       cleanup();
@@ -324,7 +418,7 @@ async function recordViaBrowser(): Promise<RecordingHandle> {
   return { source: "browser", stop, done };
 }
 
-/** Start a screen recording. On desktop the user first picks a region (the
+/** Start a screen recording. On desktop the user first drags an area (the
     handle's `done` resolves null if they cancel there). */
 export async function startScreenRecording(): Promise<RecordingHandle> {
   if (isTauri()) return recordViaDesktop();
