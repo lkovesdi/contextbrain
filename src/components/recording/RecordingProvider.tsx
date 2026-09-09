@@ -50,9 +50,9 @@ type RecordingContextValue = {
     title: string;
     deviceId?: string;
   }) => Promise<void>;
-  /** Tears down audio, ends the meeting, kicks off the server-side summary.
-      Resolves with the summary POST response (ok => generation started). */
-  stop: () => Promise<Response | null>;
+  /** Tears down audio and ends the meeting. Summarizing is a separate,
+      explicit action (the Summarize button on the meeting page). */
+  stop: () => Promise<void>;
   subscribeLines: (cb: LineListener) => () => void;
 };
 
@@ -230,23 +230,20 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     streamRef.current = null;
   }
 
-  // The two "meeting is over" requests. Summary generation runs server-side
-  // (the POST returns 202 immediately), and `keepalive` lets both requests
-  // survive the window closing — so nothing can orphan the notes.
-  const requestSummary = useCallback((meetingId: string): Promise<Response> => {
+  // The "meeting is over" request. `keepalive` lets it survive the window
+  // closing, so quitting mid-recording can't orphan the meeting. Summarizing
+  // is deliberately NOT part of stopping — the user asks for it from the
+  // meeting page, so a failed run is always retryable from the same button.
+  const endMeeting = useCallback((meetingId: string) => {
     fetch(`/api/meetings/${meetingId}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ ended_at: new Date().toISOString() }),
       keepalive: true,
     }).catch(() => {});
-    return fetch(`/api/meetings/${meetingId}/summary`, {
-      method: "POST",
-      keepalive: true,
-    });
   }, []);
 
-  const stop = useCallback(async (): Promise<Response | null> => {
+  const stop = useCallback(async (): Promise<void> => {
     const s = sessionRef.current;
     teardownAudio();
     reportUsage();
@@ -256,9 +253,9 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
     setSession(null);
     postWidgetState(null);
     tauriInvoke("widget_hide");
-    if (!s) return null;
-    return requestSummary(s.meetingId);
-  }, [postWidgetState, reportUsage, requestSummary]);
+    if (!s) return;
+    endMeeting(s.meetingId);
+  }, [postWidgetState, reportUsage, endMeeting]);
 
   const stopRef = useRef(stop);
   useEffect(() => {
@@ -591,11 +588,11 @@ export function RecordingProvider({ children }: { children: ReactNode }) {
       const s = sessionRef.current;
       if (!s) return;
       sessionRef.current = null;
-      requestSummary(s.meetingId).catch(() => {});
+      endMeeting(s.meetingId);
     };
     window.addEventListener("pagehide", onPageHide);
     return () => window.removeEventListener("pagehide", onPageHide);
-  }, [reportUsage, requestSummary]);
+  }, [reportUsage, endMeeting]);
 
   return (
     <RecordingContext.Provider

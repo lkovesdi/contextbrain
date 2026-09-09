@@ -3,7 +3,17 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronDown, ChevronUp, Mic, Plus, Radar, Square, Zap } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronUp,
+  Mic,
+  Plus,
+  Radar,
+  RefreshCw,
+  Sparkles,
+  Square,
+  Zap,
+} from "lucide-react";
 import {
   ContextSelector,
   type Selection,
@@ -151,6 +161,9 @@ export function MeetingWorkspace({
         : "idle"
   );
   const [summaryErrorMsg, setSummaryErrorMsg] = useState<string | null>(null);
+  // Set the moment a generation lands, so the Summarize button disappears
+  // without waiting for the server round-trip that renders `summarySlot`.
+  const [summaryLanded, setSummaryLanded] = useState(false);
 
   // Restore last-chosen device + load the device list. Labels are blank until
   // the user has granted mic permission at least once; we re-enumerate after
@@ -203,35 +216,68 @@ export function MeetingWorkspace({
   }, [recording]);
 
   function handleStop() {
-    setSummaryState("generating");
-    setSummaryErrorMsg(null);
-    stop()
-      .then(async (res) => {
-        // 202 = generation started server-side; the poll effect below picks
-        // up the outcome. Anything else is an immediate failure — surface the
-        // server's message (notably the 402 out-of-credits one).
-        if (res && !res.ok) {
-          const body = await res.text().catch(() => "");
-          setSummaryErrorMsg(apiErrorText(res.status, body, ""));
-          setSummaryState("error");
-        }
-      })
-      .catch(() => setSummaryState("error"));
+    void stop();
   }
 
+  // Summarizing is explicit — the Summarize button below the stream — so a
+  // failed run is always one click from a retry, and stopping a recording
+  // never burns a generation the user didn't ask for.
+  async function summarize() {
+    setSummaryState("generating");
+    setSummaryErrorMsg(null);
+    try {
+      const res = await fetch(`/api/meetings/${meetingId}/summary`, {
+        method: "POST",
+      });
+      // 202 = generation started server-side; the poll effect below picks up
+      // the outcome. Anything else is an immediate failure — surface the
+      // server's message (notably the 402 out-of-credits one).
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        setSummaryErrorMsg(apiErrorText(res.status, body, ""));
+        setSummaryState("error");
+      }
+    } catch {
+      setSummaryErrorMsg("Couldn't reach the server. Check your connection and try again.");
+      setSummaryState("error");
+    }
+  }
+
+  // Offer it while there's no summary yet and nothing is in flight. Hidden
+  // during recording — the composer row already belongs to the recorder.
+  const showSummarize =
+    !recording &&
+    !summarySlot &&
+    !summaryLanded &&
+    summaryState !== "generating";
+
   // While a server-side generation is in flight, poll for the outcome; when
-  // the summary lands, refresh so the page swaps to the summary view.
+  // the summary lands, refresh so the page swaps to the summary view. A run
+  // that never reports back (the process died before it could write
+  // summary_status) would otherwise spin forever and lock out the retry —
+  // so give up after PATIENCE ticks and hand the button back.
   useEffect(() => {
     if (summaryState !== "generating") return;
+    const PATIENCE = 90; // ×4s ≈ 6 min — well past even a PRD run
+    let ticks = 0;
     const t = setInterval(async () => {
+      if (++ticks > PATIENCE) {
+        setSummaryErrorMsg(
+          "This is taking longer than it should — the run may have stalled."
+        );
+        setSummaryState("error");
+        return;
+      }
       try {
         const res = await fetch(`/api/meetings/${meetingId}/summary`);
         if (!res.ok) return;
         const j = await res.json();
         if (j.status === "error") {
+          setSummaryErrorMsg(typeof j.error === "string" ? j.error : null);
           setSummaryState("error");
         } else if (!j.status && j.hasSummary) {
           setSummaryState("idle");
+          setSummaryLanded(true);
           router.refresh();
         }
       } catch {
@@ -933,8 +979,8 @@ export function MeetingWorkspace({
             )}
             {summaryState === "error" && (
               <p className="m-0 rounded-[6px] border border-pulse bg-pulse-tint px-3 py-2 text-[12.5px] text-pulse-ink">
-                {summaryErrorMsg ||
-                  "Summary failed. You can retry later from this page."}
+                {summaryErrorMsg || "Summary failed."}
+                {showSummarize ? " Try again below." : ""}
               </p>
             )}
             {chatError && (
@@ -942,6 +988,37 @@ export function MeetingWorkspace({
                 {chatError}
               </p>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Summarize: the one way a summary gets written. Sits at the end of the
+          stream so it's the natural next step once a meeting has wrapped, and
+          doubles as the retry when a run failed. Hidden once a summary exists
+          — regenerating lives on the summary card itself. */}
+      {showSummarize && (
+        <div className="px-[22px] pt-[10px]">
+          <div className="mx-auto w-full max-w-[820px]">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={summarize}
+              leftIcon={
+                summaryState === "error" ? (
+                  <RefreshCw size={12} strokeWidth={1.6} />
+                ) : (
+                  <Sparkles size={12} strokeWidth={1.6} />
+                )
+              }
+            >
+              {summaryState === "error"
+                ? mode === "prd"
+                  ? "Retry PRD"
+                  : "Retry summary"
+                : mode === "prd"
+                  ? "Write PRD"
+                  : "Summarize"}
+            </Button>
           </div>
         </div>
       )}
