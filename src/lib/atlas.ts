@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { generateObject } from "ai";
-import { anthropicModel, MODEL } from "@/lib/llm";
+import { anthropicModel, generateObjectRetrying, MODEL } from "@/lib/llm";
 import { InsufficientCreditsError } from "@/lib/credits";
 import { createClient } from "@/lib/supabase/server";
 import { searchUserRepos, listRepoPaths, getFileContent } from "@/lib/github";
@@ -14,24 +13,26 @@ import { scrubSecrets } from "@/lib/scrub";
 
 type SupabaseServer = Awaited<ReturnType<typeof createClient>>;
 
+// Sizes are guidance in the prose, not zod constraints — see the note above
+// IntentsOut in @/lib/scout. buildCard trims to the stated caps.
 export const RepoCardSchema = z.object({
   purpose: z
     .string()
-    .max(300)
     .describe("1-2 sentences: what this repo is and the role it plays in the org."),
-  stack: z.array(z.string().max(40)).max(8).describe("Main languages/frameworks/services."),
+  stack: z.array(z.string()).describe("Main languages/frameworks/services, at most 8."),
   domains: z
-    .array(z.string().max(40))
-    .max(10)
-    .describe("Business/product domains it touches: 'billing', 'reporting', 'auth', 'notifications', …"),
+    .array(z.string())
+    .describe(
+      "Business/product domains it touches, at most 10: 'billing', 'reporting', 'auth', 'notifications', …"
+    ),
   key_paths: z
-    .array(z.object({ path: z.string().max(140), what: z.string().max(90) }))
-    .max(10)
-    .describe("The places a newcomer would look first: API layers, schema, core services."),
+    .array(z.object({ path: z.string(), what: z.string() }))
+    .describe(
+      "At most 10 places a newcomer would look first: API layers, schema, core services."
+    ),
   packages: z
-    .array(z.string().max(60))
-    .max(12)
-    .describe("Top-level apps/packages if this is a monorepo; [] otherwise."),
+    .array(z.string())
+    .describe("Top-level apps/packages if this is a monorepo, at most 12; [] otherwise."),
 });
 export type RepoCard = z.infer<typeof RepoCardSchema>;
 
@@ -91,14 +92,21 @@ async function buildCard(
     }
   }
 
-  const { object } = await generateObject({
+  const object = await generateObjectRetrying({
     model: await anthropicModel(userId, MODEL.sonnet),
     schema: RepoCardSchema,
+    label: "repo-card",
     system:
       "You write terse, accurate index cards for code repositories. The card is used to ROUTE feature requests to the right repo, so domains and purpose matter most. Only state what the evidence supports.",
     prompt: `Repo: ${owner}/${name} @ ${branch}\n\n## Top-level layout (entry count per dir)\n${layout}\n\n## Path sample (${paths.length} files total)\n${sample}\n\n## Root docs\n${docSections.join("\n\n") || "(none readable)"}`,
   });
-  return object;
+  return {
+    purpose: object.purpose,
+    stack: object.stack.slice(0, 8),
+    domains: object.domains.slice(0, 10),
+    key_paths: object.key_paths.slice(0, 10),
+    packages: object.packages.slice(0, 12),
+  };
 }
 
 // One scan step: make sure every visible repo has an atlas row, then build

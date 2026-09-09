@@ -3,7 +3,7 @@ import { anthropicModel, generateObjectRetrying, MODEL } from "@/lib/llm";
 import { createClient } from "@/lib/supabase/server";
 import { loadReadyCards } from "@/lib/atlas";
 import { findActiveConnection } from "@/lib/composio";
-import { deepScout, IntentsOut, type ScopeMemo } from "@/lib/scout";
+import { deepScout, IntentsOut, MAX_INTENTS, type ScopeMemo } from "@/lib/scout";
 import { InsufficientCreditsError } from "@/lib/credits";
 import type { DiagramGraph } from "@/lib/diagrams";
 
@@ -32,10 +32,9 @@ const RouteOut = z.object({
         .array(
           z.object({
             full_name: z.string().describe("'owner/name' exactly as listed in the atlas."),
-            reason: z.string().max(160),
+            reason: z.string().describe("One line, under 160 characters."),
           })
         )
-        .max(2)
         .describe("Best 0-2 repos to investigate. Empty if nothing in the atlas plausibly relates."),
     })
   ),
@@ -45,34 +44,31 @@ export type { ScopeMemo };
 
 const OpenQuestionSchema = z.object({
   audience: z.enum(["pm", "engineering"]),
-  question: z.string().min(8).max(300),
-  why_it_matters: z.string().min(8).max(300),
+  question: z.string().describe("One or two sentences."),
+  why_it_matters: z.string().describe("One or two sentences."),
 });
 export type PrdOpenQuestion = z.infer<typeof OpenQuestionSchema>;
 
+// Same rule as the scout schemas: sizes are prose guidance, not zod
+// constraints — see the note above IntentsOut in @/lib/scout. Trimming
+// happens where the PRD is persisted.
 const PrdOut = z.object({
   summary_title: z
     .string()
-    .min(3)
-    .max(160)
-    .describe("Headline naming the client + the feature area, e.g. 'Acme — reporting exports & scheduling'."),
+    .describe("Headline (under 160 characters) naming the client + the feature area, e.g. 'Acme — reporting exports & scheduling'."),
   summary_markdown: z
     .string()
-    .min(40)
     .describe("Short meeting recap (≤300 words, markdown, no H1) — what was discussed and agreed. NOT the PRD."),
   pm_doc: z
     .string()
-    .min(300)
     .describe("The PM rendition of the PRD (markdown, no H1): problem, who it's for, user stories, scope in/out, success criteria, rollout considerations. Plain language, no code."),
   eng_doc: z
     .string()
-    .min(300)
     .describe("The engineering rendition (markdown, no H1): affected repos/components with paths from the scope memos, data model & API implications, integration points, suggested phasing, risks. Cite evidence inline like (repo/path)."),
   open_questions: z
     .array(OpenQuestionSchema)
-    .max(12)
     .default([])
-    .describe("Things a human must answer. Route each to 'pm' (product/client questions) or 'engineering' (technical decisions)."),
+    .describe("At most 12 things a human must answer. Route each to 'pm' (product/client questions) or 'engineering' (technical decisions)."),
 });
 export type PrdArtifact = {
   pm_doc: string;
@@ -127,15 +123,24 @@ export async function generatePrdFromMeeting(
 
   // 1. What is the client actually asking for?
   const sonnet = await anthropicModel(userId, MODEL.sonnet);
-  const intentsOut = await generateObjectRetrying({
-    model: sonnet,
-    schema: IntentsOut,
-    label: "prd-intents",
-    system:
-      "You extract concrete feature asks from a client meeting transcript. Only include things the client actually requested or clearly needs — not every topic mentioned. Merge overlapping asks.",
-    prompt: meetingBlock,
-  });
-  const intents = intentsOut.intents;
+  // Intents only decide what gets scouted — they're an enrichment step, not the
+  // PRD. If extraction fails, write the PRD from the transcript and notes alone
+  // rather than losing the whole run to a preparatory call.
+  let intents: { topic: string; ask: string }[] = [];
+  try {
+    const intentsOut = await generateObjectRetrying({
+      model: sonnet,
+      schema: IntentsOut,
+      label: "prd-intents",
+      system:
+        "You extract concrete feature asks from a client meeting transcript. Only include things the client actually requested or clearly needs — not every topic mentioned. Merge overlapping asks.",
+      prompt: meetingBlock,
+    });
+    intents = intentsOut.intents.slice(0, MAX_INTENTS);
+  } catch (e) {
+    if (e instanceof InsufficientCreditsError) throw e;
+    console.error("[prd] intent extraction failed — scouting skipped", e);
+  }
 
   // 2-3. Route intents over the atlas and deep-scout the routed repos.
   const cards = await loadReadyCards(supabase, userId);
@@ -156,55 +161,64 @@ export async function generatePrdFromMeeting(
             .join("\n")}`
         : "";
 
-    const routeOut = await generateObjectRetrying({
-      model: sonnet,
-      schema: RouteOut,
-      label: "prd-routing",
-      system:
-        "You route feature requests to the repositories most likely to implement them, using the atlas of repo cards (and system maps when present). Be conservative: only assign repos with a plausible connection.",
-      prompt: `## Feature asks\n${intents
-        .map((i) => `- ${i.topic}: ${i.ask}`)
-        .join("\n")}\n\n## Repo atlas\n${atlasBlock}${diagramBlock}`,
-    });
-    const routeByTopic = new Map(routeOut.assignments.map((a) => [a.topic, a.repos]));
-    const cardByName = new Map(cards.map((c) => [`${c.owner}/${c.name}`, c]));
+    // Routing and scouting are evidence-gathering: if they fall over, the PRD
+    // still gets written from the meeting itself (and says so). Only running
+    // out of credits stops the run, since every later call would fail too.
+    try {
+      const routeOut = await generateObjectRetrying({
+        model: sonnet,
+        schema: RouteOut,
+        label: "prd-routing",
+        system:
+          "You route feature requests to the repositories most likely to implement them, using the atlas of repo cards (and system maps when present). Be conservative: only assign repos with a plausible connection.",
+        prompt: `## Feature asks\n${intents
+          .map((i) => `- ${i.topic}: ${i.ask}`)
+          .join("\n")}\n\n## Repo atlas\n${atlasBlock}${diagramBlock}`,
+      });
+      const routeByTopic = new Map(routeOut.assignments.map((a) => [a.topic, a.repos]));
+      const cardByName = new Map(cards.map((c) => [`${c.owner}/${c.name}`, c]));
 
-    const jiraConnected = !!(await findActiveConnection(userId, "jira").catch(() => null));
+      const jiraConnected = !!(await findActiveConnection(userId, "jira").catch(() => null));
 
-    memos = (
-      await Promise.all(
-        intents.slice(0, 4).map(async (intent) => {
-          const routed = (routeByTopic.get(intent.topic) ?? [])
-            .map((r) => cardByName.get(r.full_name))
-            .filter((c): c is NonNullable<typeof c> => !!c);
-          try {
-            const memo = await deepScout(userId, intent, routed, jiraConnected);
-            await supabase.from("meeting_research").insert({
-              meeting_id: meetingId,
-              user_id: userId,
-              topic: intent.topic,
-              status: "done",
-              memo,
-            });
-            return memo;
-          } catch (e) {
-            // Out of credits kills the whole run (every remaining call would
-            // fail the same way) — let it surface as the summary error instead
-            // of marking each research topic individually errored.
-            if (e instanceof InsufficientCreditsError) throw e;
-            console.error(`[prd] scout failed for "${intent.topic}":`, e);
-            await supabase.from("meeting_research").insert({
-              meeting_id: meetingId,
-              user_id: userId,
-              topic: intent.topic,
-              status: "error",
-              memo: null,
-            });
-            return null;
-          }
-        })
-      )
-    ).filter((m): m is ScopeMemo => !!m);
+      memos = (
+        await Promise.all(
+          intents.slice(0, 4).map(async (intent) => {
+            const routed = (routeByTopic.get(intent.topic) ?? [])
+              .slice(0, 2)
+              .map((r) => cardByName.get(r.full_name))
+              .filter((c): c is NonNullable<typeof c> => !!c);
+            try {
+              const memo = await deepScout(userId, intent, routed, jiraConnected);
+              await supabase.from("meeting_research").insert({
+                meeting_id: meetingId,
+                user_id: userId,
+                topic: intent.topic,
+                status: "done",
+                memo,
+              });
+              return memo;
+            } catch (e) {
+              // Out of credits kills the whole run (every remaining call would
+              // fail the same way) — let it surface as the summary error instead
+              // of marking each research topic individually errored.
+              if (e instanceof InsufficientCreditsError) throw e;
+              console.error(`[prd] scout failed for "${intent.topic}":`, e);
+              await supabase.from("meeting_research").insert({
+                meeting_id: meetingId,
+                user_id: userId,
+                topic: intent.topic,
+                status: "error",
+                memo: null,
+              });
+              return null;
+            }
+          })
+        )
+      ).filter((m): m is ScopeMemo => !!m);
+    } catch (e) {
+      if (e instanceof InsufficientCreditsError) throw e;
+      console.error("[prd] routing failed — writing the PRD without scope memos", e);
+    }
   }
 
   // 4. The PRD itself — one Opus call, both renditions from one analysis so
@@ -225,14 +239,14 @@ export async function generatePrdFromMeeting(
   const artifact: PrdArtifact = {
     pm_doc: prd.pm_doc,
     eng_doc: prd.eng_doc,
-    open_questions: prd.open_questions,
+    open_questions: prd.open_questions.slice(0, 12),
     scouted_repos: [...new Set(memos.flatMap((m) => m.repos))],
   };
 
   await supabase
     .from("meetings")
     .update({
-      summary_title: prd.summary_title,
+      summary_title: prd.summary_title.slice(0, 160),
       summary: prd.summary_markdown,
       summary_extras: {},
       prd: artifact,

@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { generateObject } from "ai";
-import { anthropicModel, MODEL } from "@/lib/llm";
+import { anthropicModel, generateObjectRetrying, MODEL } from "@/lib/llm";
 import { createClient } from "@/lib/supabase/server";
 import { loadReadyCards, type RepoCard } from "@/lib/atlas";
 import { listRepoPaths, getFileContent } from "@/lib/github";
@@ -18,39 +17,64 @@ import { InsufficientCreditsError } from "@/lib/credits";
 
 type SupabaseServer = Awaited<ReturnType<typeof createClient>>;
 
+// Every size limit in the LLM-facing schemas below is guidance in the prose,
+// never a zod constraint. A cap enforced by validation turns "the model was
+// verbose" into NoObjectGeneratedError and throws away the entire run — which
+// is exactly how a rich meeting used to fail summary/PRD generation every
+// time, retries included. Callers trim instead.
 export const IntentsOut = z.object({
   intents: z
     .array(
       z.object({
-        topic: z.string().min(3).max(80).describe("Short handle, e.g. 'CSV export for reports'."),
+        topic: z
+          .string()
+          .describe("Short handle, under 80 characters, e.g. 'CSV export for reports'."),
         ask: z
           .string()
-          .min(10)
-          .max(500)
-          .describe("What the client wants, one paragraph, including constraints/deadlines mentioned."),
+          .describe(
+            "What the client wants, one paragraph (aim for 500 characters or fewer), including constraints/deadlines mentioned."
+          ),
       })
     )
-    .max(5)
-    .describe("Distinct feature asks / scope items raised in the meeting. Merge duplicates."),
+    .describe(
+      "At most 5 distinct feature asks / scope items raised in the meeting, best first. Merge duplicates."
+    ),
 });
+
+// Model-facing caps, applied after the fact.
+export const MAX_INTENTS = 5;
+const MAX_REPOS_PER_INTENT = 2;
 
 export const MemoSchema = z.object({
   feasibility: z
     .enum(["clear", "moderate", "uncertain"])
     .describe("clear = existing patterns cover it; moderate = real work, known shape; uncertain = needs investigation."),
-  summary: z.string().max(500).describe("2-3 sentences a PM could read."),
+  summary: z.string().describe("2-3 sentences a PM could read."),
   findings: z
     .array(
       z.object({
-        claim: z.string().max(220),
-        evidence: z.string().max(200).describe("repo path, ticket key, or tree fact backing the claim."),
+        claim: z.string().describe("One line."),
+        evidence: z
+          .string()
+          .describe("repo path, ticket key, or tree fact backing the claim."),
       })
     )
-    .max(8),
-  prior_art: z.array(z.string().max(220)).max(6).default([]),
-  risks: z.array(z.string().max(220)).max(6).default([]),
-  questions: z.array(z.string().max(220)).max(5).default([]),
+    .describe("At most 8, strongest first."),
+  prior_art: z.array(z.string()).default([]).describe("At most 6, one line each."),
+  risks: z.array(z.string()).default([]).describe("At most 6, one line each."),
+  questions: z.array(z.string()).default([]).describe("At most 5, one line each."),
 });
+
+// The memo's list caps, enforced here rather than by the schema.
+function clampMemo(memo: z.infer<typeof MemoSchema>): z.infer<typeof MemoSchema> {
+  return {
+    ...memo,
+    findings: memo.findings.slice(0, 8),
+    prior_art: memo.prior_art.slice(0, 6),
+    risks: memo.risks.slice(0, 6),
+    questions: memo.questions.slice(0, 5),
+  };
+}
 export type ScopeMemo = z.infer<typeof MemoSchema> & {
   topic: string;
   repos: string[];
@@ -118,9 +142,10 @@ export async function deepScout(
     }
   }
 
-  const { object } = await generateObject({
+  const object = await generateObjectRetrying({
     model: await anthropicModel(userId, MODEL.sonnet),
     schema: MemoSchema,
+    label: "scope-memo",
     system:
       "You are a staff engineer scoping a feature request against real code evidence. Only claim what the evidence shows; unknowns become questions, not guesses. Findings must carry their evidence (a path, a ticket key, a tree fact).",
     prompt: `## Feature ask\n${intent.topic}: ${intent.ask}\n\n## Evidence\n${
@@ -129,7 +154,7 @@ export async function deepScout(
   });
 
   return {
-    ...object,
+    ...clampMemo(object),
     topic: intent.topic,
     repos: repos.map((r) => `${r.owner}/${r.name}`),
   };
@@ -234,9 +259,10 @@ export async function liveScoutStep(
   if (cards.length === 0) return existing;
 
   const coveredTopics = existing.map((r) => r.topic);
-  const { object: intentsOut } = await generateObject({
+  const intentsOut = await generateObjectRetrying({
     model: await anthropicModel(userId, MODEL.sonnet),
     schema: IntentsOut,
+    label: "live-intents",
     system:
       "You extract concrete feature asks from a live, in-progress client meeting transcript. Only include things the client actually requested or clearly needs — not every topic mentioned — and only asks specific enough to research in a codebase. Merge overlapping asks. If a list of already-researched topics is provided, do NOT return those asks again, even rephrased. Return an empty list when nothing new and concrete has come up.",
     prompt: `${
@@ -268,17 +294,17 @@ export async function liveScoutStep(
           .array(
             z.object({
               full_name: z.string().describe("'owner/name' exactly as listed in the atlas."),
-              reason: z.string().max(160),
+              reason: z.string().describe("One line, under 160 characters."),
             })
           )
-          .max(2)
           .describe("Best 0-2 repos to investigate. Empty if nothing in the atlas plausibly relates."),
       })
     ),
   });
-  const { object: routeOut } = await generateObject({
+  const routeOut = await generateObjectRetrying({
     model: await anthropicModel(userId, MODEL.sonnet),
     schema: RouteOut,
+    label: "live-routing",
     system:
       "You route feature requests to the repositories most likely to implement them, using the atlas of repo cards. Be conservative: only assign repos with a plausible connection.",
     prompt: `## Feature asks\n${fresh
@@ -292,6 +318,7 @@ export async function liveScoutStep(
 
   for (const intent of fresh) {
     const routed = (routeByTopic.get(intent.topic) ?? [])
+      .slice(0, MAX_REPOS_PER_INTENT)
       .map((r) => cardByName.get(r.full_name))
       .filter((c): c is NonNullable<typeof c> => !!c);
     if (routed.length === 0) continue;
