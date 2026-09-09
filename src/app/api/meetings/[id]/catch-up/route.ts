@@ -92,6 +92,27 @@ Do not add any other headings, preamble, or closing remarks.`;
     model,
     system,
     prompt,
+    // Persist the exchange like a normal chat turn — the meeting page restores
+    // its thread from chat_messages, and a recap that vanished on reload while
+    // the rest of the conversation survived would just read as a bug.
+    onFinish: async ({ text }) => {
+      if (!text) return;
+      const { error } = await supabase.from("chat_messages").insert([
+        {
+          meeting_id: meetingId,
+          user_id: user.id,
+          role: "user",
+          content: "Catch me up",
+        },
+        {
+          meeting_id: meetingId,
+          user_id: user.id,
+          role: "assistant",
+          content: text,
+        },
+      ]);
+      if (error) console.error("[catch-up] persist failed:", error.message);
+    },
   });
 
   // Drain even on client disconnect so the metering middleware's usage debit

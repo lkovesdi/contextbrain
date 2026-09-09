@@ -1,5 +1,11 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
-import { wrapLanguageModel } from "ai";
+import {
+  generateObject,
+  wrapLanguageModel,
+  NoObjectGeneratedError,
+  type LanguageModel,
+} from "ai";
+import type { z } from "zod";
 import { resolveKey } from "@/lib/settings";
 import { assertCredits, meteringMiddleware } from "@/lib/credits";
 
@@ -23,3 +29,38 @@ export async function anthropicModel(userId: string, modelId: string) {
   await assertCredits(userId);
   return wrapLanguageModel({ model, middleware: meteringMiddleware(userId, modelId) });
 }
+
+// `claude-opus-4-8` isn't in @ai-sdk/anthropic's capability table yet, so the
+// provider falls back to tool-call mode for structured output instead of the
+// model's native one. A tool call that misses the schema — one string past a
+// bound, a field the model decided to skip — makes generateObject throw
+// NoObjectGeneratedError, and the whole run is lost. That's the intermittent
+// "response did not match schema" summary failure. Resampling once clears it
+// almost every time, so do that here rather than making every caller handle it.
+export async function generateObjectRetrying<S extends z.ZodType>(args: {
+  model: LanguageModel;
+  schema: S;
+  system?: string;
+  prompt: string;
+  maxOutputTokens?: number;
+  label?: string;
+}): Promise<z.infer<S>> {
+  const { label = "object", ...call } = args;
+  try {
+    const { object } = await generateObject(call);
+    return object as z.infer<S>;
+  } catch (e) {
+    if (!NoObjectGeneratedError.isInstance(e)) throw e;
+    console.warn(`[llm] ${label} missed the schema — resampling once`);
+    const { object } = await generateObject({
+      ...call,
+      system: call.system ? `${call.system}\n\n${SCHEMA_NUDGE}` : SCHEMA_NUDGE,
+    });
+    return object as z.infer<S>;
+  }
+}
+
+const SCHEMA_NUDGE = `Output rules (a previous attempt was rejected)
+- Return the object through the provided tool call, nothing else — no prose before or after it.
+- Every required field must be present. Lists that have no items are [], never omitted and never null.
+- Respect the stated length limits on each field; trim rather than overflow.`;

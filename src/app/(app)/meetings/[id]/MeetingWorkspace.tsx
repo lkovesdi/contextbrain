@@ -114,6 +114,7 @@ export function MeetingWorkspace({
   initialSpeakerNames = {},
   initialNotes,
   initialResearch = [],
+  initialMessages = [],
   chips,
   integrations,
   githubConnected,
@@ -134,6 +135,9 @@ export function MeetingWorkspace({
   initialSpeakerNames?: Record<string, string>;
   initialNotes: Note[];
   initialResearch?: ResearchRow[];
+  // The chat thread as persisted by /api/chat — restored so a reload (or a
+  // trip through another page) doesn't wipe the conversation.
+  initialMessages?: Msg[];
   chips: ChipData[];
   integrations: string[];
   githubConnected: boolean;
@@ -592,7 +596,7 @@ export function MeetingWorkspace({
     }
   }
 
-  const [messages, setMessages] = useState<Msg[]>([]);
+  const [messages, setMessages] = useState<Msg[]>(initialMessages);
   const [input, setInput] = useState("");
   const att = useChatAttachments();
   const [streaming, setStreaming] = useState(false);

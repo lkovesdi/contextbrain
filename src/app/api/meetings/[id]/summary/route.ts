@@ -1,7 +1,7 @@
 import { NextResponse, after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getAuthUser } from "@/lib/supabase/auth";
-import { generateAndStoreSummary } from "@/lib/summary";
+import { generateAndStoreSummary, summaryErrorText } from "@/lib/summary";
 import { generatePrdFromMeeting } from "@/lib/prd";
 import { assertCredits, creditErrorResponse } from "@/lib/credits";
 import { resolveKey } from "@/lib/settings";
@@ -74,7 +74,7 @@ export async function POST(
         .from("meetings")
         .update({
           summary_status: "error",
-          summary_error: e instanceof Error ? e.message : "Summary generation failed",
+          summary_error: summaryErrorText(e),
         })
         .eq("id", meetingId);
     }

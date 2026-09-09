@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { ChevronLeft } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
+import { attachmentsFromStored } from "@/lib/chat-attachments";
 import { getAuthUser } from "@/lib/supabase/auth";
 import { MeetingWorkspace } from "./MeetingWorkspace";
 import { MeetingTitle } from "./MeetingTitle";
@@ -43,6 +44,7 @@ export default async function MeetingPage({
     { data: createdTickets },
     { data: tagRows },
     { data: researchRows },
+    { data: chatHistory },
   ] = await Promise.all([
     supabase
       .from("transcripts")
@@ -84,7 +86,30 @@ export default async function MeetingPage({
       .select("id,topic,status,memo,created_at")
       .eq("meeting_id", id)
       .order("created_at", { ascending: true }),
+    // The meeting chat is already persisted per turn by /api/chat — load it
+    // back so the thread survives a reload, exactly like space chat does.
+    // `*` rather than a column list keeps this working if migration 0022
+    // (attachments) hasn't been applied — an unknown column would otherwise
+    // blank the whole history.
+    supabase
+      .from("chat_messages")
+      .select("*")
+      .eq("meeting_id", id)
+      .order("created_at", { ascending: true })
+      .limit(200),
   ]);
+
+  const initialMessages = ((chatHistory ?? []) as {
+    role: string;
+    content: string;
+    attachments?: unknown;
+  }[])
+    .filter((m) => m.role === "user" || m.role === "assistant")
+    .map((m) => ({
+      role: m.role as "user" | "assistant",
+      content: m.content,
+      attachments: attachmentsFromStored(m.attachments),
+    }));
 
   const presetSources = presetRow?.data?.sources ?? null;
   const presetName = presetRow?.data?.name ?? null;
@@ -141,6 +166,7 @@ export default async function MeetingPage({
         }
         initialNotes={notes ?? []}
         initialResearch={(researchRows ?? []) as ResearchRow[]}
+        initialMessages={initialMessages}
         chips={(contexts ?? []) as ChipData[]}
         integrations={integrationProviders}
         githubConnected={integrationProviders.includes("github")}

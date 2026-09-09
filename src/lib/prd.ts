@@ -1,6 +1,5 @@
 import { z } from "zod";
-import { generateObject } from "ai";
-import { anthropicModel, MODEL } from "@/lib/llm";
+import { anthropicModel, generateObjectRetrying, MODEL } from "@/lib/llm";
 import { createClient } from "@/lib/supabase/server";
 import { loadReadyCards } from "@/lib/atlas";
 import { findActiveConnection } from "@/lib/composio";
@@ -128,9 +127,10 @@ export async function generatePrdFromMeeting(
 
   // 1. What is the client actually asking for?
   const sonnet = await anthropicModel(userId, MODEL.sonnet);
-  const { object: intentsOut } = await generateObject({
+  const intentsOut = await generateObjectRetrying({
     model: sonnet,
     schema: IntentsOut,
+    label: "prd-intents",
     system:
       "You extract concrete feature asks from a client meeting transcript. Only include things the client actually requested or clearly needs — not every topic mentioned. Merge overlapping asks.",
     prompt: meetingBlock,
@@ -156,9 +156,10 @@ export async function generatePrdFromMeeting(
             .join("\n")}`
         : "";
 
-    const { object: routeOut } = await generateObject({
+    const routeOut = await generateObjectRetrying({
       model: sonnet,
       schema: RouteOut,
+      label: "prd-routing",
       system:
         "You route feature requests to the repositories most likely to implement them, using the atlas of repo cards (and system maps when present). Be conservative: only assign repos with a plausible connection.",
       prompt: `## Feature asks\n${intents
@@ -213,9 +214,10 @@ export async function generatePrdFromMeeting(
       ? `<scope_memos>\n${JSON.stringify(memos, null, 1)}\n</scope_memos>\n\n`
       : "<scope_memos>\n(No repo evidence was available — write the PRD from the meeting alone, state the lack of code grounding explicitly in the engineering doc, and lean harder on open questions.)\n</scope_memos>\n\n";
 
-  const { object: prd } = await generateObject({
+  const prd = await generateObjectRetrying({
     model: await anthropicModel(userId, MODEL.opus),
     schema: PrdOut,
+    label: "prd",
     system: PRD_SYSTEM_PROMPT,
     prompt: `${memosBlock}${meetingBlock}`,
   });

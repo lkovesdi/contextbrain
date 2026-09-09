@@ -1,5 +1,5 @@
-import { anthropicModel } from "@/lib/llm";
-import { generateObject } from "ai";
+import { anthropicModel, generateObjectRetrying, MODEL } from "@/lib/llm";
+import { generateText, NoObjectGeneratedError } from "ai";
 import { createClient } from "@/lib/supabase/server";
 import { embed } from "@/lib/embed";
 import { z } from "zod";
@@ -26,12 +26,9 @@ const TicketPriority = z.enum(["urgent", "high", "medium", "low", "none"]);
 const SuggestedTicket = z.object({
   title: z
     .string()
-    .min(4)
-    .max(160)
-    .describe("Imperative title in the voice of the team (e.g. 'Backfill embeddings for old transcripts')."),
+    .describe("Imperative title in the voice of the team, under 160 characters (e.g. 'Backfill embeddings for old transcripts')."),
   description: z
     .string()
-    .min(8)
     .describe(
       "1-3 sentences of context from the meeting: what, why, and any constraints. No fluff."
     ),
@@ -49,7 +46,7 @@ const SuggestedTicket = z.object({
 });
 
 const Decision = z.object({
-  text: z.string().min(4).describe("The decision itself, stated as a complete sentence."),
+  text: z.string().describe("The decision itself, stated as a complete sentence."),
   owner: z
     .string()
     .nullable()
@@ -58,7 +55,7 @@ const Decision = z.object({
 });
 
 const OpenQuestion = z.object({
-  text: z.string().min(4).describe("The unresolved question, phrased as a question."),
+  text: z.string().describe("The unresolved question, phrased as a question."),
   raised_by: z
     .string()
     .nullable()
@@ -67,10 +64,9 @@ const OpenQuestion = z.object({
 });
 
 const Tangent = z.object({
-  topic: z.string().min(2).describe("Short label for the side topic."),
+  topic: z.string().describe("Short label for the side topic."),
   note: z
     .string()
-    .min(4)
     .describe("One-line summary of what was said and why it was set aside."),
 });
 
@@ -81,7 +77,6 @@ const GithubRef = z.object({
   ),
   identifier: z
     .string()
-    .min(1)
     .describe(
       "The exact identifier: PR/issue number (no '#'), short or full commit SHA, or branch name."
     ),
@@ -94,9 +89,9 @@ const GithubRef = z.object({
     ),
   context: z
     .string()
-    .min(4)
-    .max(200)
-    .describe("One-sentence snippet from the meeting explaining what this ref is about."),
+    .describe(
+      "One-sentence snippet (under 200 characters) from the meeting explaining what this ref is about."
+    ),
 });
 
 const SummaryExtras = z.object({
@@ -110,14 +105,11 @@ const SummaryExtras = z.object({
 const SummaryOut = z.object({
   title: z
     .string()
-    .min(3)
-    .max(160)
     .describe(
-      "Specific, scannable headline of the meeting (e.g. 'SSO rollout — auth flow, sub-org access, user types'). Not 'Meeting summary'."
+      "Specific, scannable headline (under 160 characters) of the meeting (e.g. 'SSO rollout — auth flow, sub-org access, user types'). Not 'Meeting summary'."
     ),
   markdown: z
     .string()
-    .min(40)
     .describe(
       "Full meeting summary as GitHub-flavored markdown. Uses 3-5 H3 sections whose names reflect what actually happened, with hierarchical bullets (parent bullet states the point, sub-bullets give specifics). No top-level H1. Do NOT duplicate items that appear in the structured 'decisions', 'open_questions', 'tangents', or 'suggested_tickets' fields — those are rendered separately."
     ),
@@ -160,6 +152,23 @@ Quality bar
 - If the transcript is short or empty, write a brief summary anyway — do not refuse. Use the notes if transcript is thin.
 - Don't invent facts. If you're not sure who owns an action item, write the action without an owner.
 - Don't pad. A 15-minute meeting gets a short summary; a 90-minute meeting gets a longer one.`;
+
+// What the user reads in the banner when a run dies. Raw SDK strings ("No
+// object generated: response did not match schema.") tell them nothing about
+// what to do, and every one of these cases is worth retrying.
+export function summaryErrorText(e: unknown): string {
+  const msg = e instanceof Error ? e.message : String(e ?? "");
+  if (/no object generated|did not match schema|could not parse/i.test(msg)) {
+    return "The model's response came back malformed. Try again — a second pass usually lands.";
+  }
+  if (/overloaded|rate.?limit|\b429\b|\b529\b/i.test(msg)) {
+    return "Anthropic was overloaded. Give it a moment, then try again.";
+  }
+  if (/timeout|timed out|aborted|ETIMEDOUT|ECONNRESET/i.test(msg)) {
+    return "The run timed out before it finished. Try again.";
+  }
+  return msg || "Summary generation failed.";
+}
 
 export type GeneratedSummary = {
   title: string;
@@ -415,14 +424,44 @@ export async function generateAndStoreSummary(
 
   const prompt = `${meetingContextBlock}${pinnedBlock}${designsBlock}${githubReposBlock}${researchBlock}${notesBlock}${transcriptBlock}`;
 
-  const result = await generateObject({
-    model: await anthropicModel(userId, "claude-opus-4-8"),
-    schema: SummaryOut,
-    system: SYSTEM_PROMPT,
-    prompt,
-  });
+  const model = await anthropicModel(userId, MODEL.opus);
 
-  const { title, markdown, extras } = result.object;
+  let title: string;
+  let markdown: string;
+  let extras: z.infer<typeof SummaryExtras>;
+  try {
+    ({ title, markdown, extras } = await generateObjectRetrying({
+      model,
+      schema: SummaryOut,
+      system: SYSTEM_PROMPT,
+      prompt,
+      label: "summary",
+    }));
+  } catch (e) {
+    if (!NoObjectGeneratedError.isInstance(e)) throw e;
+    // Both structured attempts missed the schema. Rather than lose the whole
+    // run, ask for the body as prose: a summary without the structured pulls
+    // beats no summary, and Regenerate can go after the extras again.
+    console.warn("[summary] structured output failed twice — writing prose only");
+    const { text } = await generateText({
+      model,
+      system: `${SYSTEM_PROMPT}\n\nReturn ONLY the markdown body — no title line, no JSON, no commentary.`,
+      prompt,
+    });
+    markdown = text.trim();
+    if (!markdown) throw e;
+    title = meeting.title?.trim() || "Meeting";
+    extras = {
+      decisions: [],
+      open_questions: [],
+      tangents: [],
+      suggested_tickets: [],
+      github_refs: [],
+    };
+  }
+  // The bounds live in the prompt now, not the schema — a title that runs long
+  // is no longer worth failing a run over, but it still can't blow up the header.
+  title = title.slice(0, 160);
 
   // Stamp the candidate repos onto extras so the UI can render clickable
   // links without re-querying. The model picks `repo_hint` per ref when
